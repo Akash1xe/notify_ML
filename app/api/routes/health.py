@@ -1,0 +1,17 @@
+from fastapi import APIRouter, Request
+
+router = APIRouter(tags=["system"])
+
+
+@router.get("/")
+def root(request: Request) -> dict[str, str]:
+    return {
+        "name": request.app.state.settings.app_name,
+        "service": "notify",
+        "phase": "1-foundation",
+    }
+
+
+@router.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok", "service": "notify"}
