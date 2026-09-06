@@ -25,7 +25,7 @@ class AppSettings(BaseSettings):
     job_retention_hours: int = Field(default=72, ge=1)
     max_concurrent_jobs: int = Field(default=2, ge=1, le=32)
     log_level: str = "INFO"
-    processor_mode: Literal["analysis", "ingestion", "fake"] = "analysis"
+    processor_mode: Literal["candidates", "analysis", "ingestion", "fake"] = "analysis"
 
     # Phase-1 compatibility/testing processor.
     fake_processor_step_delay: float = Field(default=0.15, ge=0.0, le=60.0)
@@ -97,6 +97,68 @@ class AppSettings(BaseSettings):
     min_changing_duration_seconds: float = Field(default=1.0, ge=0.0, le=600.0)
     max_stable_gap_seconds: float = Field(default=0.5, ge=0.0, le=60.0)
 
+    # Phase-4.1 stability windows.
+    stability_window_min_duration_seconds: float = Field(default=2.0, ge=0.0, le=600.0)
+    stability_max_invalid_frame_ratio: float = Field(default=0.10, ge=0.0, le=1.0)
+    stability_max_black_frame_ratio: float = Field(default=0.20, ge=0.0, le=1.0)
+    stability_duration_saturation_seconds: float = Field(default=10.0, gt=0.0, le=3600.0)
+    stability_difference_weight: float = Field(default=0.55, ge=0.0)
+    stability_variance_weight: float = Field(default=0.15, ge=0.0)
+    stability_max_spike_weight: float = Field(default=0.15, ge=0.0)
+    stability_duration_weight: float = Field(default=0.15, ge=0.0)
+
+    # Phase-4.2 stable-boundary detection.
+    boundary_context_seconds: float = Field(default=4.0, gt=0.0, le=60.0)
+    boundary_min_activity_drop: float = Field(default=0.10, ge=0.0, le=1.0)
+    boundary_min_score: float = Field(default=0.25, ge=0.0, le=1.0)
+    boundary_duration_saturation_seconds: float = Field(default=10.0, gt=0.0, le=3600.0)
+    boundary_drop_weight: float = Field(default=0.40, ge=0.0)
+    boundary_stability_weight: float = Field(default=0.25, ge=0.0)
+    boundary_quality_weight: float = Field(default=0.20, ge=0.0)
+    boundary_duration_weight: float = Field(default=0.10, ge=0.0)
+    boundary_type_weight: float = Field(default=0.05, ge=0.0)
+
+    # Phase-4.3 candidate timestamp generation.
+    candidate_settle_delay_seconds: float = Field(default=1.0, ge=0.0, le=30.0)
+    candidate_exit_margin_seconds: float = Field(default=0.75, ge=0.0, le=30.0)
+    min_candidate_spacing_seconds: float = Field(default=1.0, ge=0.0, le=60.0)
+    max_candidates_per_window: int = Field(default=5, ge=1, le=20)
+    candidate_frame_search_radius_seconds: float = Field(default=1.5, ge=0.0, le=30.0)
+    allow_window_only_candidates: bool = True
+    max_total_candidates: int = Field(default=1000, ge=1, le=100_000)
+
+    # Phase-4.4 explainable candidate heuristics.
+    candidate_sharpness_saturation: float = Field(default=200.0, gt=0.0)
+    candidate_local_context_seconds: float = Field(default=1.5, gt=0.0, le=60.0)
+    candidate_transition_safe_margin_seconds: float = Field(default=1.0, gt=0.0, le=30.0)
+    completeness_boundary_weight: float = Field(default=0.20, ge=0.0)
+    completeness_stability_weight: float = Field(default=0.18, ge=0.0)
+    completeness_activity_weight: float = Field(default=0.14, ge=0.0)
+    completeness_accumulation_weight: float = Field(default=0.14, ge=0.0)
+    completeness_density_weight: float = Field(default=0.10, ge=0.0)
+    completeness_position_weight: float = Field(default=0.08, ge=0.0)
+    completeness_quality_weight: float = Field(default=0.08, ge=0.0)
+    completeness_safety_weight: float = Field(default=0.08, ge=0.0)
+
+    # Phase-4.5 ranking and per-window selection.
+    rank_quality_weight: float = Field(default=0.22, ge=0.0)
+    rank_completeness_weight: float = Field(default=0.28, ge=0.0)
+    rank_safety_weight: float = Field(default=0.18, ge=0.0)
+    rank_local_stability_weight: float = Field(default=0.14, ge=0.0)
+    rank_boundary_weight: float = Field(default=0.08, ge=0.0)
+    rank_density_weight: float = Field(default=0.06, ge=0.0)
+    rank_accumulation_weight: float = Field(default=0.04, ge=0.0)
+    top_candidates_per_window: int = Field(default=2, ge=1, le=5)
+    min_primary_ranking_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    min_alternate_ranking_score: float = Field(default=0.25, ge=0.0, le=1.0)
+    ambiguous_ranking_gap: float = Field(default=0.05, ge=0.0, le=1.0)
+    ranking_tie_epsilon: float = Field(default=1e-6, gt=0.0, le=0.1)
+
+    # Phase-4.7 diagnostics only; these values never auto-tune production logic.
+    phase4_high_primary_density_per_minute: float = Field(default=4.0, gt=0.0)
+    phase4_high_ambiguity_ratio: float = Field(default=0.80, ge=0.0, le=1.0)
+    phase4_winner_type_skew_ratio: float = Field(default=0.85, ge=0.0, le=1.0)
+
     @field_validator("log_level")
     @classmethod
     def normalize_log_level(cls, value: str) -> str:
@@ -138,6 +200,46 @@ class AppSettings(BaseSettings):
             raise ValueError("TIMELINE_STABLE_MIN_SCORE must be <= TIMELINE_STABLE_MAX_SCORE")
         if self.major_change_min_score > self.very_major_change_min_score:
             raise ValueError("MAJOR_CHANGE_MIN_SCORE must be <= VERY_MAJOR_CHANGE_MIN_SCORE")
+        phase4_weight_groups = {
+            "stability": (
+                self.stability_difference_weight,
+                self.stability_variance_weight,
+                self.stability_max_spike_weight,
+                self.stability_duration_weight,
+            ),
+            "boundary": (
+                self.boundary_drop_weight,
+                self.boundary_stability_weight,
+                self.boundary_quality_weight,
+                self.boundary_duration_weight,
+                self.boundary_type_weight,
+            ),
+            "completeness": (
+                self.completeness_boundary_weight,
+                self.completeness_stability_weight,
+                self.completeness_activity_weight,
+                self.completeness_accumulation_weight,
+                self.completeness_density_weight,
+                self.completeness_position_weight,
+                self.completeness_quality_weight,
+                self.completeness_safety_weight,
+            ),
+            "ranking": (
+                self.rank_quality_weight,
+                self.rank_completeness_weight,
+                self.rank_safety_weight,
+                self.rank_local_stability_weight,
+                self.rank_boundary_weight,
+                self.rank_density_weight,
+                self.rank_accumulation_weight,
+            ),
+        }
+        for name, weights in phase4_weight_groups.items():
+            if sum(weights) <= 0:
+                raise ValueError(f"At least one {name} weight must be > 0")
+        if self.min_alternate_ranking_score < self.min_primary_ranking_score:
+            # Alternates may be held to a stricter threshold, never a looser one.
+            raise ValueError("MIN_ALTERNATE_RANKING_SCORE must be >= MIN_PRIMARY_RANKING_SCORE")
         return self
 
 

@@ -2,9 +2,9 @@
 
 Notify is a **local-first lecture processing application**. The long-term product accepts a YouTube lecture, identifies completed teaching states such as slides, boards, diagrams, and code, selects useful screenshots with a local vision-language model, removes duplicates, and generates a PDF.
 
-**Phase 3 is complete.** Notify can now ingest a recorded YouTube lecture, create timestamped analysis frames, preprocess them with classical computer vision, measure visual change, identify major transitions, and build a stable/changing temporal timeline with restart-safe caching.
+**Phase 4 is complete.** Notify can now ingest a lecture, build a timestamped visual activity timeline, detect sustained stable windows and settle boundaries, generate a bounded set of representative frame candidates, score them with explainable classical heuristics, and select PRIMARY/ALTERNATE candidates with restart-safe dependency-aware caching.
 
-No paid API, cloud vision service, OCR, Whisper, Qwen, screenshot candidate generation, or PDF generation is used in Phase 3.
+No paid API, cloud vision service, OCR, Whisper, Qwen, final high-resolution screenshot extraction, or PDF generation is used through Phase 4.
 
 ## Current pipeline
 
@@ -37,13 +37,27 @@ Phase 3 - FrameAnalysisPipeline
     |
     v
 FRAME_ANALYSIS_COMPLETE
+    |
+    v
+Phase 4 - CandidateAnalysisPipeline
+    |
+    +--> 4.1 stability windows
+    +--> 4.2 CHANGING/transition -> STABLE boundaries
+    +--> 4.3 strategic candidate timestamps
+    +--> 4.4 quality/completeness heuristics
+    +--> 4.5 per-window PRIMARY/ALTERNATE ranking
+    +--> 4.6 dependency-aware cache/recovery
+    +--> 4.7 final validation + summary/evaluation
+    |
+    v
+CANDIDATES_READY
 ```
 
-The default `PROCESSOR_MODE=analysis` runs Phase 2 and Phase 3 as one job. `PROCESSOR_MODE=ingestion` retains Phase-2-only behavior, and `PROCESSOR_MODE=fake` is retained for deterministic foundation tests.
+`PROCESSOR_MODE=candidates` runs Phase 2, Phase 3, and Phase 4 as one job. `PROCESSOR_MODE=analysis` remains the Phase-3-only compatibility mode, `PROCESSOR_MODE=ingestion` retains Phase-2-only behavior, and `PROCESSOR_MODE=fake` is retained for deterministic foundation tests. The provided `.env.example` selects `candidates`.
 
 ## Workspace contract
 
-A successful Phase-3 job produces conceptually:
+A successful Phase-4 job produces conceptually:
 
 ```text
 storage/jobs/<job_id>/
@@ -72,7 +86,17 @@ storage/jobs/<job_id>/
 │   ├── major_changes.json
 │   ├── timeline.json
 │   ├── summary.json
-│   └── evaluation.json       # only when evaluation script is run
+│   └── evaluation.json       # only when Phase-3 evaluator is run
+│
+├── candidates/
+│   ├── stability_windows.json
+│   ├── boundaries.json
+│   ├── generated_candidates.json
+│   ├── scored_candidates.json
+│   ├── ranked_candidates.json
+│   ├── selections.json
+│   ├── summary.json
+│   └── evaluation.json       # only when Phase-4 evaluator is run
 │
 ├── logs/
 │   └── events.ndjson
@@ -636,38 +660,94 @@ Current implementation uses:
 
 Subprocess commands use argument arrays instead of `shell=True`. User-controlled video titles never become filesystem paths. Persisted relative artifact paths are validated to remain inside the UUID job workspace before use/deletion.
 
-# Phase 4 handoff
+# Phase 4 — visual candidate analysis
 
-Phase 4 may assume a validated Phase-3 job provides:
+Phase 4 deliberately reduces thousands of sampled frames to a compact set of visual opportunities before transcript/VLM work. It is metadata-driven except for candidate-only heuristic inspection.
 
-```text
-FRAME_ANALYSIS_COMPLETE
-source/video.*
-frames/manifest.json
-frames/preprocessing.json
-analysis/differences.json
-analysis/major_changes.json
-analysis/timeline.json
-analysis/summary.json
-```
+## 4.1 Stability windows
 
-Phase 4 should consume the temporal pattern, especially:
+Phase-3 `STABLE` segments are validated by duration, difference statistics and existing frame-quality metadata. Black/invalid-heavy windows can be rejected while dark but informative content remains eligible. Each window preserves previous/next timeline state and major-transition proximity.
+
+## 4.2 Stable boundaries
+
+Notify detects conservative temporal patterns such as:
 
 ```text
 CHANGING -> STABLE
+MAJOR_TRANSITION -> STABLE
+BLACK_TRANSITION -> STABLE
 ```
 
-and decide whether a stable period is a useful candidate for a completed slide, board, diagram, or code state.
+It measures pre/post activity drop and records boundary strength without claiming semantic labels such as “diagram complete.”
 
-Phase 4 must **not** rerun YouTube ingestion or visual-difference scoring when Phase-3 artifacts validate.
+## 4.3 Candidate generation
+
+A valid opportunity produces only a few strategic timestamps (`SETTLED_START`, `MID_STABLE`, `PRE_EXIT`, and longer-window variants). Candidates are mapped to the nearest valid non-black analysis frame using real timestamps, spacing limits and bounded search radius. `MAX_CANDIDATES_PER_WINDOW` and `MAX_TOTAL_CANDIDATES` prevent candidate explosion.
+
+## 4.4 Explainable heuristics
+
+Each candidate keeps separate features including:
+
+```text
+visual quality
+content density
+local stability
+transition risk / safety
+preceding activity
+content accumulation
+positional completeness
+completeness heuristic
+```
+
+`completeness_heuristic_score` is not semantic truth. It only estimates whether a visual state looks like a useful settled state using deterministic classical signals.
+
+## 4.5 Ranking and selection
+
+Candidates compete only within their own stability window. Ranking combines quality, heuristic completeness, safety, local stability, boundary strength, density and accumulation. The result preserves all ranked candidates while selecting a `PRIMARY` and, when useful, an `ALTERNATE`. Close top scores mark the window as ambiguous for later VLM comparison.
+
+## 4.6 Cache and resume
+
+```text
+Phase 3 timeline
+  -> 4.1 windows
+  -> 4.2 boundaries
+  -> 4.3 generated candidates
+  -> 4.4 heuristic scores
+  -> 4.5 rankings/selections
+```
+
+Every stage validates its checkpoint, artifact schema, deterministic config fingerprint, upstream fingerprint and internal references. A ranking-weight change reruns only 4.5; a candidate-generation setting change reruns 4.3–4.5; a Phase-3 timeline change invalidates all Phase 4. Known `.json.tmp` files are cleaned on recovery and never count as valid cache.
+
+## Phase-4 APIs
+
+```text
+GET /api/jobs/{job_id}/candidates
+GET /api/jobs/{job_id}/candidates/selections
+GET /api/jobs/{job_id}/candidates/cache
+```
+
+The summary endpoints do not embed image bytes or thousands of raw frame records.
+
+## Evaluation
+
+Evaluate an already completed Phase-4 workspace:
+
+```bash
+python scripts/evaluate_phase4.py <job_id> --storage-root storage/jobs --persist
+```
+
+The evaluator reports window/boundary/candidate density, heuristic distributions, ambiguity, winner-type skew and diagnostic warnings. It never auto-tunes production thresholds.
+
+# Phase 5/6 handoff
+
+Later transcription/VLM stages can consume a compact handoff containing PRIMARY/ALTERNATE timestamp, frame references, ranking score, selection confidence, ambiguity, boundary evidence, visual quality, heuristic completeness and transition safety. Sampled/processed frames remain proxies; final screenshots must later be extracted from `source/video.*`.
 
 Not implemented yet:
 
-- screenshot candidate generation
-- completed-writing/slide/code/diagram classification
 - faster-whisper transcription
 - transcript/frame alignment
 - Qwen3-VL semantic judging
-- best high-quality screenshot extraction
-- pHash/SSIM final screenshot deduplication
+- semantic “writing/slide/code/diagram complete” classification
+- exact high-quality screenshot extraction from source video
+- final cross-window visual deduplication
 - PDF generation

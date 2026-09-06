@@ -153,6 +153,30 @@ class WorkspaceManager:
     def candidates_dir(self, job_id: str) -> Path:
         return self.workspace(job_id) / "candidates"
 
+    def stability_windows_path(self, job_id: str) -> Path:
+        return self.candidates_dir(job_id) / "stability_windows.json"
+
+    def boundaries_path(self, job_id: str) -> Path:
+        return self.candidates_dir(job_id) / "boundaries.json"
+
+    def generated_candidates_path(self, job_id: str) -> Path:
+        return self.candidates_dir(job_id) / "generated_candidates.json"
+
+    def scored_candidates_path(self, job_id: str) -> Path:
+        return self.candidates_dir(job_id) / "scored_candidates.json"
+
+    def ranked_candidates_path(self, job_id: str) -> Path:
+        return self.candidates_dir(job_id) / "ranked_candidates.json"
+
+    def candidate_selections_path(self, job_id: str) -> Path:
+        return self.candidates_dir(job_id) / "selections.json"
+
+    def candidate_summary_path(self, job_id: str) -> Path:
+        return self.candidates_dir(job_id) / "summary.json"
+
+    def candidate_evaluation_path(self, job_id: str) -> Path:
+        return self.candidates_dir(job_id) / "evaluation.json"
+
     def screenshots_dir(self, job_id: str) -> Path:
         return self.workspace(job_id) / "screenshots"
 

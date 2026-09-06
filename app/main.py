@@ -6,6 +6,15 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.api.routes import health, jobs, system
+from app.candidate_analysis.boundaries import StableBoundaryDetector
+from app.candidate_analysis.cache import CandidateAnalysisCacheManager
+from app.candidate_analysis.evaluation import Phase4Evaluator
+from app.candidate_analysis.generation import CandidateGenerator
+from app.candidate_analysis.heuristics import CandidateHeuristicAnalyzer
+from app.candidate_analysis.pipeline import CandidateAnalysisPipeline
+from app.candidate_analysis.ranking import CandidateRankingService
+from app.candidate_analysis.repository import CandidateAnalysisRepository
+from app.candidate_analysis.stability import StabilityWindowDetector
 from app.core.config import AppSettings, get_settings
 from app.core.exceptions import InvalidJobTransitionError, JobNotFoundError, NotifyError, StorageError
 from app.core.logging import JobEventLogger, configure_logging
@@ -84,17 +93,47 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             cache=analysis_cache,
             repository=analysis_repository,
         )
+        candidate_repository = CandidateAnalysisRepository(workspace)
+        candidate_cache = CandidateAnalysisCacheManager(resolved_settings, workspace, checkpoints)
+        candidate_analysis = CandidateAnalysisPipeline(
+            settings=resolved_settings,
+            jobs=service,
+            workspace=workspace,
+            checkpoints=checkpoints,
+            events=event_logger,
+            frame_cache=analysis_cache,
+            frame_repository=analysis_repository,
+            stability=StabilityWindowDetector(resolved_settings, workspace),
+            boundaries=StableBoundaryDetector(resolved_settings, workspace),
+            generator=CandidateGenerator(resolved_settings, workspace),
+            heuristics=CandidateHeuristicAnalyzer(resolved_settings, workspace),
+            ranking=CandidateRankingService(resolved_settings, workspace),
+            cache=candidate_cache,
+            repository=candidate_repository,
+        )
+        phase4_evaluator = Phase4Evaluator(
+            resolved_settings, workspace, candidate_repository, analysis_repository
+        )
+        phase3_pipeline = NotifyPipeline(
+            ingestion=ingestion,
+            frame_analysis=frame_analysis,
+            ingestion_cache=ingestion_cache,
+            jobs=service,
+        )
         full_pipeline = NotifyPipeline(
             ingestion=ingestion,
             frame_analysis=frame_analysis,
             ingestion_cache=ingestion_cache,
             jobs=service,
+            candidate_analysis=candidate_analysis,
         )
 
         if resolved_settings.processor_mode == "fake":
             processor = FakeProcessor(service, checkpoints, resolved_settings)
         elif resolved_settings.processor_mode == "ingestion":
             processor = ingestion
+        elif resolved_settings.processor_mode == "analysis":
+            processor = phase3_pipeline
         else:
             processor = full_pipeline
 
@@ -121,6 +160,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         app.state.frame_analysis_cache = analysis_cache
         app.state.frame_analysis_repository = analysis_repository
         app.state.frame_analysis_pipeline = frame_analysis
+        app.state.candidate_analysis_cache = candidate_cache
+        app.state.candidate_analysis_repository = candidate_repository
+        app.state.candidate_analysis_pipeline = candidate_analysis
+        app.state.phase4_evaluator = phase4_evaluator
         app.state.notify_pipeline = full_pipeline
         app.state.cleanup_manager = cleanup
 
@@ -133,7 +176,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     app = FastAPI(
         title=resolved_settings.app_name,
-        version="0.3.0",
+        version="0.4.0",
         lifespan=lifespan,
     )
     app.include_router(health.router)

@@ -175,3 +175,32 @@ class TimelineGenerationError(NotifyError):
 class FrameAnalysisValidationError(NotifyError):
     code = "frame_analysis_validation_failed"
     category = "FRAME_ANALYSIS"
+
+
+class CandidateAnalysisError(NotifyError):
+    code = "candidate_analysis_failed"
+    category = "CANDIDATE_ANALYSIS"
+
+
+class StabilityWindowDetectionError(CandidateAnalysisError):
+    code = "stability_window_detection_failed"
+
+
+class BoundaryDetectionError(CandidateAnalysisError):
+    code = "boundary_detection_failed"
+
+
+class CandidateGenerationError(CandidateAnalysisError):
+    code = "candidate_generation_failed"
+
+
+class CandidateHeuristicsError(CandidateAnalysisError):
+    code = "candidate_heuristics_failed"
+
+
+class CandidateRankingError(CandidateAnalysisError):
+    code = "candidate_ranking_failed"
+
+
+class CandidateAnalysisValidationError(CandidateAnalysisError):
+    code = "candidate_analysis_validation_failed"

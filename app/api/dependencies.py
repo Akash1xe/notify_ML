@@ -3,6 +3,9 @@ from __future__ import annotations
 from fastapi import Request
 
 from app.ingestion.cache import CleanupManager
+from app.candidate_analysis.cache import CandidateAnalysisCacheManager
+from app.candidate_analysis.pipeline import CandidateAnalysisPipeline
+from app.candidate_analysis.repository import CandidateAnalysisRepository
 from app.ingestion.pipeline import IngestionPipeline
 from app.jobs.runner import JobRunner
 from app.jobs.service import JobService
@@ -42,3 +45,15 @@ def get_frame_analysis_cache(request: Request) -> FrameAnalysisCacheManager:
 
 def get_frame_analysis_repository(request: Request) -> FrameAnalysisRepository:
     return request.app.state.frame_analysis_repository
+
+
+def get_candidate_analysis_pipeline(request: Request) -> CandidateAnalysisPipeline:
+    return request.app.state.candidate_analysis_pipeline
+
+
+def get_candidate_analysis_cache(request: Request) -> CandidateAnalysisCacheManager:
+    return request.app.state.candidate_analysis_cache
+
+
+def get_candidate_analysis_repository(request: Request) -> CandidateAnalysisRepository:
+    return request.app.state.candidate_analysis_repository

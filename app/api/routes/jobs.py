@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import ValidationError
 
 from app.api.dependencies import (
+    get_candidate_analysis_cache,
+    get_candidate_analysis_repository,
     get_frame_analysis_cache,
     get_frame_analysis_repository,
     get_job_runner,
@@ -13,6 +15,9 @@ from app.api.dependencies import (
     get_workspace,
 )
 from app.ingestion.models import IngestionResult
+from app.candidate_analysis.cache import CandidateAnalysisCacheManager
+from app.candidate_analysis.models import CandidateAnalysisSummary, CandidateCacheSnapshot, SelectionsManifest
+from app.candidate_analysis.repository import CandidateAnalysisRepository
 from app.ingestion.youtube.models import YouTubeMetadata
 from app.jobs.models import Job, JobCreateRequest, JobListResponse
 from app.jobs.runner import JobRunner
@@ -134,3 +139,50 @@ def get_analysis_cache_state(
     except ValueError as exc:
         raise HTTPException(status_code=500, detail="Stored source path is invalid") from exc
     return cache.inspect(job_id, source)
+
+
+@router.get("/{job_id}/candidates", response_model=CandidateAnalysisSummary)
+def get_candidate_summary(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: CandidateAnalysisRepository = Depends(get_candidate_analysis_repository),
+) -> CandidateAnalysisSummary:
+    service.get_job(job_id)
+    try:
+        return repository.load_summary(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Visual candidates are not available yet") from exc
+
+
+@router.get("/{job_id}/candidates/selections", response_model=SelectionsManifest)
+def get_candidate_selections(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: CandidateAnalysisRepository = Depends(get_candidate_analysis_repository),
+) -> SelectionsManifest:
+    service.get_job(job_id)
+    try:
+        return repository.load_selections(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Candidate selections are not available yet") from exc
+
+
+@router.get("/{job_id}/candidates/cache", response_model=CandidateCacheSnapshot)
+def get_candidate_cache_state(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    frame_repository: FrameAnalysisRepository = Depends(get_frame_analysis_repository),
+    cache: CandidateAnalysisCacheManager = Depends(get_candidate_analysis_cache),
+) -> CandidateCacheSnapshot:
+    service.get_job(job_id)
+    try:
+        return cache.inspect(
+            job_id,
+            sampling=frame_repository.load_sampling(job_id),
+            preprocessing=frame_repository.load_preprocessing(job_id),
+            differences=frame_repository.load_differences(job_id),
+            major_changes=frame_repository.load_major_changes(job_id),
+            timeline=frame_repository.load_timeline(job_id),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Candidate cache state is not available yet") from exc

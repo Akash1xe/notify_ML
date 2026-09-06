@@ -359,15 +359,26 @@ class NotifyPipeline:
         frame_analysis: FrameAnalysisPipeline,
         ingestion_cache: CacheManager,
         jobs: JobService,
+        candidate_analysis=None,
     ) -> None:
         self._ingestion = ingestion
         self._frame_analysis = frame_analysis
         self._ingestion_cache = ingestion_cache
         self._jobs = jobs
+        self._candidate_analysis = candidate_analysis
 
     async def process(self, job_id: str) -> None:
         ingestion = await self._ingestion.process(job_id, finalize_job=False)
         current = self._jobs.get_job(job_id)
         if current.status is JobStatus.CANCELLED:
             raise JobCancelledError(f"Job {job_id} was cancelled")
-        await self._frame_analysis.process(job_id, ingestion=ingestion, finalize_job=True)
+        await self._frame_analysis.process(
+            job_id,
+            ingestion=ingestion,
+            finalize_job=self._candidate_analysis is None,
+        )
+        if self._candidate_analysis is not None:
+            current = self._jobs.get_job(job_id)
+            if current.status is JobStatus.CANCELLED:
+                raise JobCancelledError(f"Job {job_id} was cancelled")
+            await self._candidate_analysis.process(job_id, finalize_job=True)
