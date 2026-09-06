@@ -1,0 +1,51 @@
+name: Publish phases 3-5
+
+on:
+  push:
+    branches: [phase5-clean-publish]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: phase5-clean-publish
+          fetch-depth: 0
+
+      - name: Reconstruct tested snapshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/notify-publish
+          cat upload/part_* | base64 -d > /tmp/phase345_publish.tar.xz
+          echo "50242fe989fe08c25dff0d3f551de1c9ffd16150be186a52790c26f3a475a5dd  /tmp/phase345_publish.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/phase345_publish.tar.xz -C /tmp/notify-publish
+
+      - name: Publish clean phase commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Akash"
+          git config user.email "121711965+Akash1xe@users.noreply.github.com"
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "2792bee8cc3586e3cde8c7e9cd2f21d2e710fce4"
+          git checkout -B publish-work origin/main
+
+          apply_snapshot() {
+            local src="$1"
+            local message="$2"
+            find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+            cp -a "$src"/. .
+            git add -A
+            git commit -m "$message"
+          }
+
+          apply_snapshot /tmp/notify-publish/phase3 "Complete visual frame analysis pipeline"
+          apply_snapshot /tmp/notify-publish/phase4 "Complete visual candidate analysis pipeline"
+          apply_snapshot /tmp/notify-publish/phase5 "Complete transcript context pipeline"
+
+          git push origin HEAD:main
