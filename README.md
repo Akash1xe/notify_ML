@@ -751,3 +751,85 @@ Not implemented yet:
 - exact high-quality screenshot extraction from source video
 - final cross-window visual deduplication
 - PDF generation
+
+
+## Phase 5 — Local transcription and candidate context
+
+Phase 5 turns the Phase-2 normalized WAV and Phase-4 retained visual candidates into timestamped transcript context for later semantic visual reasoning. The production path remains local-first: `faster-whisper` is loaded lazily, CPU `int8` is the default, CUDA is optional, and CI/unit tests inject a fake speech-to-text adapter so model downloads are never required.
+
+```text
+CANDIDATES_READY + audio/audio.wav
+        ↓
+Audio validation + streaming signal diagnostics
+        ↓
+Deterministic logical chunk plan
+        ↓
+faster-whisper raw chunk transcripts
+        ↓
+Overlap-aware transcript normalization
+        ↓
+Indexed candidate ↔ speech alignment
+        ↓
+Before / current / after candidate context
+        ↓
+TRANSCRIPT_CONTEXT_READY
+```
+
+### Phase-5 workspace contract
+
+```text
+transcript/
+├── preparation.json
+├── raw_chunks/
+│   ├── chunk_0001.json
+│   └── ...
+├── raw_transcript.json
+├── transcript.json
+├── candidate_alignment.json
+├── contexts.json
+├── summary.json
+└── evaluation.json        # optional diagnostics
+```
+
+`preparation.json` verifies the WAV can actually be decoded as 16 kHz mono 16-bit PCM, checks audio/video duration drift, measures RMS/silence/clipping in streaming windows, and defines full-lecture logical chunks with bounded decode overlap. Silence and modest clipping are diagnostics; structurally unusable or effectively silent audio is rejected.
+
+Raw transcription is persisted per chunk before final assembly. Completed chunk artifacts are fingerprinted by audio identity, chunk definition, model configuration and algorithm version. A restart can therefore reuse valid chunks, recompute only a missing/corrupt chunk, or rebuild `raw_transcript.json` entirely from chunk artifacts without loading Whisper. Overlap duplicates are deliberately kept raw and resolved in Phase 5.3 with conservative time + text similarity while retaining raw provenance.
+
+The normalized transcript remains fine-grained for temporal queries. Phase 5.4 builds one transcript timeline index and aligns only retained PRIMARY/ALTERNATE visual candidates using overlap/previous/next speech, optional word timing, and a bounded speech-proximity heuristic. Speech proximity never reranks or rejects visual candidates. Phase 5.5 then builds bounded `before_text`, `current_text`, and `after_text` packages; CURRENT speech has highest retention priority, oldest BEFORE text and farthest AFTER text are trimmed first, and transcript wording/Unicode are preserved exactly from normalization.
+
+The Phase-5 cache dependency chain is:
+
+```text
+Phase-2 audio
+  ↓
+5.1 preparation
+  ↓
+5.2 raw chunks + raw transcript
+  ↓
+5.3 normalized transcript
+  ↓            Phase-4 selections
+5.4 alignment ←────────────┘
+  ↓
+5.5 contexts
+```
+
+Changes are invalidated precisely: chunk-plan changes restart 5.1+, Whisper configuration restarts 5.2+, normalization settings restart 5.3+, alignment settings or candidate-selection changes restart 5.4+, and context-window changes restart only 5.5. Routine cache inspection reads metadata/fingerprints and does not decode audio or initialize Whisper.
+
+Use the local evaluator after a completed job:
+
+```bash
+python scripts/evaluate_phase5.py storage/jobs/<job-id>
+```
+
+It reports audio diagnostics, chunk/transcription structure, overlap normalization, speech coverage, candidate-speech alignment and context size/truncation warnings. It never auto-tunes model or production thresholds.
+
+Useful Phase-5 API endpoints include:
+
+- `GET /api/jobs/{job_id}/transcript/preparation` — audio/chunk preparation metadata.
+- `GET /api/jobs/{job_id}/transcript/summary` — compact Phase-5 summary.
+- `GET /api/jobs/{job_id}/transcript/alignment` — alignment metadata without duplicating transcript text.
+- `GET /api/jobs/{job_id}/transcript/contexts` — compact context statistics.
+- `GET /api/jobs/{job_id}/transcript/contexts/{candidate_id}` — one structured candidate context.
+- `GET /api/jobs/{job_id}/transcript/cache` — compact cache/resume state.
+
+`TRANSCRIPT_CONTEXT_READY` means visual candidates now have deterministic transcript context suitable for Phase 6. It does **not** mean the transcript is semantically perfect, the visual is approved, or a final PDF screenshot has been selected. Phase 6 remains responsible for Qwen3-VL semantic reasoning.

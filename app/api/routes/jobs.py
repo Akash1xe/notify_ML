@@ -13,6 +13,8 @@ from app.api.dependencies import (
     get_job_runner,
     get_job_service,
     get_workspace,
+    get_transcription_repository,
+    get_transcript_cache,
 )
 from app.ingestion.models import IngestionResult
 from app.candidate_analysis.cache import CandidateAnalysisCacheManager
@@ -26,6 +28,17 @@ from app.storage.workspace import WorkspaceManager
 from app.video_analysis.cache import FrameAnalysisCacheManager
 from app.video_analysis.models import AnalysisCacheSnapshot, FrameAnalysisSummary
 from app.video_analysis.repository import FrameAnalysisRepository
+from app.transcription.cache import TranscriptCacheCoordinator
+from app.transcription.models import (
+    CandidateAlignmentManifest,
+    CandidateContextsManifest,
+    CandidateTranscriptContext,
+    ContextStats,
+    TranscriptCacheSnapshot,
+    TranscriptSummary,
+    TranscriptionPreparationManifest,
+)
+from app.transcription.repository import TranscriptionRepository
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -186,3 +199,79 @@ def get_candidate_cache_state(
         )
     except Exception as exc:
         raise HTTPException(status_code=404, detail="Candidate cache state is not available yet") from exc
+
+
+@router.get("/{job_id}/transcript/preparation", response_model=TranscriptionPreparationManifest)
+def get_transcription_preparation(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: TranscriptionRepository = Depends(get_transcription_repository),
+) -> TranscriptionPreparationManifest:
+    service.get_job(job_id)
+    try:
+        return repository.load_preparation(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Transcription preparation is not available yet") from exc
+
+
+@router.get("/{job_id}/transcript/summary", response_model=TranscriptSummary)
+def get_transcript_summary(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: TranscriptionRepository = Depends(get_transcription_repository),
+) -> TranscriptSummary:
+    service.get_job(job_id)
+    try:
+        return repository.load_summary(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Transcript context is not available yet") from exc
+
+
+@router.get("/{job_id}/transcript/alignment", response_model=CandidateAlignmentManifest)
+def get_transcript_alignment(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: TranscriptionRepository = Depends(get_transcription_repository),
+) -> CandidateAlignmentManifest:
+    service.get_job(job_id)
+    try:
+        return repository.load_alignment(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Candidate transcript alignment is not available yet") from exc
+
+
+@router.get("/{job_id}/transcript/contexts", response_model=ContextStats)
+def get_transcript_contexts(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: TranscriptionRepository = Depends(get_transcription_repository),
+) -> ContextStats:
+    service.get_job(job_id)
+    try:
+        return repository.load_contexts(job_id).stats
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Candidate transcript contexts are not available yet") from exc
+
+
+@router.get("/{job_id}/transcript/contexts/{candidate_id}", response_model=CandidateTranscriptContext)
+def get_candidate_transcript_context(
+    job_id: str,
+    candidate_id: int,
+    service: JobService = Depends(get_job_service),
+    repository: TranscriptionRepository = Depends(get_transcription_repository),
+) -> CandidateTranscriptContext:
+    service.get_job(job_id)
+    try:
+        return repository.get_candidate_context(job_id, candidate_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Candidate transcript context is not available") from exc
+
+
+@router.get("/{job_id}/transcript/cache", response_model=TranscriptCacheSnapshot)
+def get_transcript_cache_state(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    cache: TranscriptCacheCoordinator = Depends(get_transcript_cache),
+) -> TranscriptCacheSnapshot:
+    service.get_job(job_id)
+    return cache.inspect(job_id)

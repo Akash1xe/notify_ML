@@ -40,6 +40,16 @@ from app.video_analysis.preprocessing import FramePreprocessor
 from app.video_analysis.repository import FrameAnalysisRepository
 from app.video_analysis.sampling import FrameSampler
 from app.video_analysis.timeline import TemporalTimelineService
+from app.transcription.alignment import CandidateTranscriptAlignmentService
+from app.transcription.cache import TranscriptCacheCoordinator
+from app.transcription.context import CandidateTranscriptContextService
+from app.transcription.engine import TranscriptionEngine
+from app.transcription.evaluation import Phase5Evaluator
+from app.transcription.faster_whisper_adapter import FasterWhisperAdapter
+from app.transcription.normalization import TranscriptNormalizationService
+from app.transcription.pipeline import TranscriptionPipeline
+from app.transcription.preparation import AudioPreparationService
+from app.transcription.repository import TranscriptionRepository
 
 
 def create_app(settings: AppSettings | None = None) -> FastAPI:
@@ -114,6 +124,50 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         phase4_evaluator = Phase4Evaluator(
             resolved_settings, workspace, candidate_repository, analysis_repository
         )
+
+        transcription_repository = TranscriptionRepository(workspace)
+        audio_preparation = AudioPreparationService(
+            resolved_settings, workspace, checkpoints, transcription_repository, candidate_repository
+        )
+        whisper_adapter = FasterWhisperAdapter(resolved_settings)
+        transcription_engine = TranscriptionEngine(
+            resolved_settings, workspace, transcription_repository, whisper_adapter
+        )
+        transcript_normalization = TranscriptNormalizationService(
+            resolved_settings, transcription_repository
+        )
+        transcript_alignment = CandidateTranscriptAlignmentService(
+            resolved_settings, transcription_repository, candidate_repository
+        )
+        transcript_context = CandidateTranscriptContextService(
+            resolved_settings, transcription_repository, candidate_repository
+        )
+        transcript_cache = TranscriptCacheCoordinator(
+            workspace,
+            checkpoints,
+            transcription_repository,
+            candidate_repository,
+            audio_preparation,
+            transcription_engine,
+            transcript_normalization,
+            transcript_alignment,
+            transcript_context,
+        )
+        transcription_pipeline = TranscriptionPipeline(
+            jobs=service,
+            checkpoints=checkpoints,
+            events=event_logger,
+            preparation=audio_preparation,
+            engine=transcription_engine,
+            normalization=transcript_normalization,
+            alignment=transcript_alignment,
+            context=transcript_context,
+            cache=transcript_cache,
+            repository=transcription_repository,
+        )
+        phase5_evaluator = Phase5Evaluator(
+            resolved_settings, workspace, transcription_repository
+        )
         phase3_pipeline = NotifyPipeline(
             ingestion=ingestion,
             frame_analysis=frame_analysis,
@@ -127,6 +181,14 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             jobs=service,
             candidate_analysis=candidate_analysis,
         )
+        transcription_full_pipeline = NotifyPipeline(
+            ingestion=ingestion,
+            frame_analysis=frame_analysis,
+            ingestion_cache=ingestion_cache,
+            jobs=service,
+            candidate_analysis=candidate_analysis,
+            transcription=transcription_pipeline,
+        )
 
         if resolved_settings.processor_mode == "fake":
             processor = FakeProcessor(service, checkpoints, resolved_settings)
@@ -134,8 +196,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             processor = ingestion
         elif resolved_settings.processor_mode == "analysis":
             processor = phase3_pipeline
-        else:
+        elif resolved_settings.processor_mode == "candidates":
             processor = full_pipeline
+        else:
+            processor = transcription_full_pipeline
 
         runner = JobRunner(
             service,
@@ -164,7 +228,16 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         app.state.candidate_analysis_repository = candidate_repository
         app.state.candidate_analysis_pipeline = candidate_analysis
         app.state.phase4_evaluator = phase4_evaluator
-        app.state.notify_pipeline = full_pipeline
+        app.state.transcription_repository = transcription_repository
+        app.state.audio_preparation_service = audio_preparation
+        app.state.transcription_engine = transcription_engine
+        app.state.transcript_normalization_service = transcript_normalization
+        app.state.transcript_alignment_service = transcript_alignment
+        app.state.transcript_context_service = transcript_context
+        app.state.transcript_cache = transcript_cache
+        app.state.transcription_pipeline = transcription_pipeline
+        app.state.phase5_evaluator = phase5_evaluator
+        app.state.notify_pipeline = transcription_full_pipeline if resolved_settings.processor_mode == "transcription" else full_pipeline
         app.state.cleanup_manager = cleanup
 
         await runner.start()
@@ -176,7 +249,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     app = FastAPI(
         title=resolved_settings.app_name,
-        version="0.4.0",
+        version="0.5.0",
         lifespan=lifespan,
     )
     app.include_router(health.router)

@@ -183,6 +183,37 @@ class WorkspaceManager:
     def transcript_dir(self, job_id: str) -> Path:
         return self.workspace(job_id) / "transcript"
 
+
+    def transcript_preparation_path(self, job_id: str) -> Path:
+        return self.transcript_dir(job_id) / "preparation.json"
+
+    def raw_transcript_chunks_dir(self, job_id: str) -> Path:
+        return self.transcript_dir(job_id) / "raw_chunks"
+
+    def raw_transcript_chunk_path(self, job_id: str, chunk_id: int) -> Path:
+        return self.raw_transcript_chunks_dir(job_id) / f"chunk_{chunk_id:04d}.json"
+
+    def raw_transcript_path(self, job_id: str) -> Path:
+        return self.transcript_dir(job_id) / "raw_transcript.json"
+
+    def normalized_transcript_path(self, job_id: str) -> Path:
+        return self.transcript_dir(job_id) / "transcript.json"
+
+    def candidate_alignment_path(self, job_id: str) -> Path:
+        return self.transcript_dir(job_id) / "candidate_alignment.json"
+
+    def transcript_contexts_path(self, job_id: str) -> Path:
+        return self.transcript_dir(job_id) / "contexts.json"
+
+    def transcript_summary_path(self, job_id: str) -> Path:
+        return self.transcript_dir(job_id) / "summary.json"
+
+    def transcript_evaluation_path(self, job_id: str) -> Path:
+        return self.transcript_dir(job_id) / "evaluation.json"
+
+    def transcript_temp_audio_dir(self, job_id: str) -> Path:
+        return self.transcript_dir(job_id) / "chunks.tmp"
+
     def decisions_dir(self, job_id: str) -> Path:
         return self.workspace(job_id) / "decisions"
 

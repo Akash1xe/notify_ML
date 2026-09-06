@@ -25,7 +25,7 @@ class AppSettings(BaseSettings):
     job_retention_hours: int = Field(default=72, ge=1)
     max_concurrent_jobs: int = Field(default=2, ge=1, le=32)
     log_level: str = "INFO"
-    processor_mode: Literal["candidates", "analysis", "ingestion", "fake"] = "analysis"
+    processor_mode: Literal["transcription", "candidates", "analysis", "ingestion", "fake"] = "analysis"
 
     # Phase-1 compatibility/testing processor.
     fake_processor_step_delay: float = Field(default=0.15, ge=0.0, le=60.0)
@@ -154,6 +154,56 @@ class AppSettings(BaseSettings):
     ambiguous_ranking_gap: float = Field(default=0.05, ge=0.0, le=1.0)
     ranking_tie_epsilon: float = Field(default=1e-6, gt=0.0, le=0.1)
 
+    # Phase 5.1 - audio validation and transcription preparation.
+    audio_video_duration_tolerance_seconds: float = Field(default=3.0, ge=0.0, le=120.0)
+    audio_video_duration_tolerance_ratio: float = Field(default=0.01, ge=0.0, le=0.2)
+    audio_min_duration_seconds: float = Field(default=0.5, ge=0.0, le=60.0)
+    audio_diagnostic_window_seconds: float = Field(default=1.0, gt=0.0, le=30.0)
+    audio_silence_rms_threshold: float = Field(default=0.003, ge=0.0, le=1.0)
+    audio_effectively_silent_ratio: float = Field(default=0.98, ge=0.0, le=1.0)
+    audio_high_clipping_ratio: float = Field(default=0.02, ge=0.0, le=1.0)
+    transcription_chunk_seconds: float = Field(default=600.0, gt=1.0, le=7200.0)
+    transcription_chunk_overlap_seconds: float = Field(default=3.0, ge=0.0, le=60.0)
+
+    # Phase 5.2 - local faster-whisper transcription.
+    whisper_model_size: str = "small"
+    whisper_device: Literal["cpu", "cuda", "auto"] = "cpu"
+    whisper_compute_type: str = "int8"
+    whisper_language: str = "auto"
+    whisper_beam_size: int = Field(default=5, ge=1, le=20)
+    whisper_vad_filter: bool = True
+    whisper_word_timestamps: bool = True
+    whisper_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
+    whisper_condition_on_previous_text: bool = False
+    whisper_chunk_max_retries: int = Field(default=1, ge=0, le=5)
+    whisper_model_cache_dir: Path | None = None
+    max_concurrent_transcriptions: int = Field(default=1, ge=1, le=8)
+
+    # Phase 5.3 - transcript normalization.
+    transcript_overlap_time_tolerance_seconds: float = Field(default=4.0, ge=0.0, le=30.0)
+    transcript_duplicate_similarity_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    transcript_merge_max_gap_seconds: float = Field(default=0.75, ge=0.0, le=10.0)
+    transcript_max_segment_duration_seconds: float = Field(default=20.0, gt=0.0, le=300.0)
+    transcript_max_segment_characters: int = Field(default=400, ge=20, le=5000)
+    transcript_short_segment_max_duration_seconds: float = Field(default=1.5, ge=0.0, le=30.0)
+
+    # Phase 5.4 - visual candidate/transcript alignment.
+    alignment_timestamp_epsilon_seconds: float = Field(default=0.05, ge=0.0, le=2.0)
+    alignment_proximity_saturation_seconds: float = Field(default=10.0, gt=0.0, le=300.0)
+    alignment_word_level_enabled: bool = True
+
+    # Phase 5.5 - compact transcript context.
+    transcript_context_before_seconds: float = Field(default=12.0, ge=0.0, le=300.0)
+    transcript_context_after_seconds: float = Field(default=8.0, ge=0.0, le=300.0)
+    transcript_context_max_boundary_extension_seconds: float = Field(default=3.0, ge=0.0, le=30.0)
+    transcript_context_max_characters: int = Field(default=4000, ge=100, le=50000)
+    transcript_context_max_words: int = Field(default=500, ge=10, le=10000)
+    transcript_context_min_words_for_non_sparse: int = Field(default=8, ge=0, le=1000)
+
+    # Phase 5.7 diagnostics only.
+    phase5_low_speech_coverage_ratio: float = Field(default=0.05, ge=0.0, le=1.0)
+    phase5_high_empty_context_ratio: float = Field(default=0.50, ge=0.0, le=1.0)
+
     # Phase-4.7 diagnostics only; these values never auto-tune production logic.
     phase4_high_primary_density_per_minute: float = Field(default=4.0, gt=0.0)
     phase4_high_ambiguity_ratio: float = Field(default=0.80, ge=0.0, le=1.0)
@@ -168,7 +218,7 @@ class AppSettings(BaseSettings):
             raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}")
         return normalized
 
-    @field_validator("ffmpeg_path", "ffprobe_path", mode="before")
+    @field_validator("ffmpeg_path", "ffprobe_path", "whisper_model_cache_dir", mode="before")
     @classmethod
     def empty_tool_path_is_none(cls, value):
         if value is None or (isinstance(value, str) and not value.strip()):
@@ -237,6 +287,12 @@ class AppSettings(BaseSettings):
         for name, weights in phase4_weight_groups.items():
             if sum(weights) <= 0:
                 raise ValueError(f"At least one {name} weight must be > 0")
+        if self.transcription_chunk_overlap_seconds >= self.transcription_chunk_seconds:
+            raise ValueError("TRANSCRIPTION_CHUNK_OVERLAP_SECONDS must be smaller than TRANSCRIPTION_CHUNK_SECONDS")
+        if not self.whisper_model_size.strip():
+            raise ValueError("WHISPER_MODEL_SIZE must not be empty")
+        if not self.whisper_compute_type.strip():
+            raise ValueError("WHISPER_COMPUTE_TYPE must not be empty")
         if self.min_alternate_ranking_score < self.min_primary_ranking_score:
             # Alternates may be held to a stricter threshold, never a looser one.
             raise ValueError("MIN_ALTERNATE_RANKING_SCORE must be >= MIN_PRIMARY_RANKING_SCORE")

@@ -57,3 +57,19 @@ def get_candidate_analysis_cache(request: Request) -> CandidateAnalysisCacheMana
 
 def get_candidate_analysis_repository(request: Request) -> CandidateAnalysisRepository:
     return request.app.state.candidate_analysis_repository
+
+
+def get_transcription_pipeline(request: Request):
+    return request.app.state.transcription_pipeline
+
+
+def get_transcription_repository(request: Request):
+    return request.app.state.transcription_repository
+
+
+def get_transcript_cache(request: Request):
+    return request.app.state.transcript_cache
+
+
+def get_phase5_evaluator(request: Request):
+    return request.app.state.phase5_evaluator

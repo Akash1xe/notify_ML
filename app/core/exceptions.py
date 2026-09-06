@@ -204,3 +204,40 @@ class CandidateRankingError(CandidateAnalysisError):
 
 class CandidateAnalysisValidationError(CandidateAnalysisError):
     code = "candidate_analysis_validation_failed"
+
+
+class TranscriptionError(NotifyError):
+    code = "transcription_failed"
+    category = "TRANSCRIPTION"
+
+
+class AudioPreparationError(TranscriptionError):
+    code = "audio_preparation_failed"
+
+
+class TranscriptionModelLoadError(TranscriptionError):
+    code = "transcription_model_load_failed"
+
+
+class AudioChunkTranscriptionError(TranscriptionError):
+    code = "audio_chunk_transcription_failed"
+
+
+class RawTranscriptionError(TranscriptionError):
+    code = "raw_transcription_failed"
+
+
+class TranscriptNormalizationError(TranscriptionError):
+    code = "transcript_normalization_failed"
+
+
+class TranscriptAlignmentError(TranscriptionError):
+    code = "transcript_alignment_failed"
+
+
+class TranscriptContextError(TranscriptionError):
+    code = "transcript_context_failed"
+
+
+class Phase5ValidationError(TranscriptionError):
+    code = "phase5_validation_failed"
