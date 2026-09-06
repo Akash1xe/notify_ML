@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from app.jobs.checkpoints import CheckpointStore
 from app.jobs.models import JobStage
 from app.jobs.repository import JobRepository
 from app.jobs.service import JobService
-from app.media.models import AudioResult, AudioStreamInfo, MediaInspection, VideoStreamInfo
+from app.media.models import AudioResult, AudioStreamInfo, FileFingerprint, MediaInspection, VideoStreamInfo
 from app.media.probe import fingerprint
 from app.storage.workspace import WorkspaceManager, atomic_write_json
 
@@ -93,7 +94,7 @@ def test_complete_cache_is_reusable(tmp_path: Path):
 
 
 def test_missing_audio_resumes_audio_only(tmp_path: Path):
-    _, _, _, cache, job, _, audio = prepare_complete(tmp_path)
+    _, _, checkpoints, cache, job, _, audio = prepare_complete(tmp_path)
     audio.unlink()
     assert cache.determine_resume_stage(job.id, job.source_url) is JobStage.EXTRACTING_AUDIO
     snapshot = cache.inspect(job.id, job.source_url)

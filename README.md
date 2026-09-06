@@ -1,49 +1,49 @@
 # Notify ML
 
-Notify is a **local-first lecture processing application**. The final product will accept a YouTube lecture, identify completed teaching states such as slides, boards, diagrams, and code, select useful screenshots with a local vision-language model, remove duplicates, and generate a PDF.
+Notify is a **local-first lecture processing application**. The long-term product accepts a YouTube lecture, identifies completed teaching states such as slides, boards, diagrams, and code, selects useful screenshots with a local vision-language model, removes duplicates, and generates a PDF.
 
-This repository is the ML-oriented implementation track. **Phase 2 is complete:** Notify can now turn a supported recorded YouTube URL into a validated local source video plus normalized transcription-ready audio, with job persistence, cancellation, caching, restart recovery, and cleanup.
+**Phase 3 is complete.** Notify can now ingest a recorded YouTube lecture, create timestamped analysis frames, preprocess them with classical computer vision, measure visual change, identify major transitions, and build a stable/changing temporal timeline with restart-safe caching.
 
-## Current architecture
+No paid API, cloud vision service, OCR, Whisper, Qwen, screenshot candidate generation, or PDF generation is used in Phase 3.
+
+## Current pipeline
 
 ```text
-Client
-  |
-  v
-FastAPI
-  |
-  v
-Job Service ----------------------> isolated job workspace
-  |
-  v
-Bounded Job Runner
-  |
-  v
-IngestionPipeline
-  |
-  +--> YouTube URL validation
-  |      |
-  |      +--> yt-dlp metadata (no download)
-  |
-  +--> yt-dlp video download (<= 1080p by default)
-  |
-  +--> FFmpeg / ffprobe capability check
-  |
-  +--> ffprobe media inspection
-  |
-  +--> FFmpeg normalized audio extraction
-  |
-  +--> dependency-aware cache + checkpoints
-  |
-  v
+YouTube URL
+    |
+    v
+Phase 2 - IngestionPipeline
+    |
+    +--> validate/normalize YouTube URL
+    +--> yt-dlp metadata
+    +--> yt-dlp video download
+    +--> ffprobe media inspection
+    +--> FFmpeg 16 kHz mono PCM audio
+    +--> ingestion cache/recovery
+    |
+    v
 INGESTION_COMPLETE
+    |
+    v
+Phase 3 - FrameAnalysisPipeline
+    |
+    +--> 3.1 FFmpeg frame sampling
+    +--> 3.2 OpenCV quality/preprocessing
+    +--> 3.3 visual difference scoring
+    +--> 3.4 major transition detection
+    +--> 3.5 temporal activity timeline
+    +--> 3.6 dependency-aware cache/recovery
+    +--> 3.7 final validation + summary/evaluation
+    |
+    v
+FRAME_ANALYSIS_COMPLETE
 ```
 
-Phase 3 can consume the local video and media metadata without knowing anything about YouTube or `yt-dlp`.
+The default `PROCESSOR_MODE=analysis` runs Phase 2 and Phase 3 as one job. `PROCESSOR_MODE=ingestion` retains Phase-2-only behavior, and `PROCESSOR_MODE=fake` is retained for deterministic foundation tests.
 
-## Phase 2 output contract
+## Workspace contract
 
-A successful job produces this structure:
+A successful Phase-3 job produces conceptually:
 
 ```text
 storage/jobs/<job_id>/
@@ -52,9 +52,28 @@ storage/jobs/<job_id>/
 │   ├── video.*
 │   ├── download.json
 │   └── media.json
+│
 ├── audio/
 │   ├── audio.wav
 │   └── audio.json
+│
+├── frames/
+│   ├── sampled/
+│   │   ├── frame_00000001.jpg
+│   │   └── ...
+│   ├── processed/
+│   │   ├── frame_00000001.jpg
+│   │   └── ...
+│   ├── manifest.json
+│   └── preprocessing.json
+│
+├── analysis/
+│   ├── differences.json
+│   ├── major_changes.json
+│   ├── timeline.json
+│   ├── summary.json
+│   └── evaluation.json       # only when evaluation script is run
+│
 ├── logs/
 │   └── events.ndjson
 ├── checkpoints.json
@@ -62,171 +81,344 @@ storage/jobs/<job_id>/
 └── job.json
 ```
 
-`audio/audio.wav` is normalized to:
+`frames/sampled/*` and `frames/processed/*` are **analysis artifacts**, not final PDF screenshots. Later screenshot selection must return to `source/video.*` for the cleanest/high-quality exact frame.
 
-```text
-WAV
-PCM signed 16-bit
-16 kHz
-mono
-```
+# Phase 2 — ingestion
 
-It is ready for a future local Whisper/faster-whisper stage. **Phase 2 does not perform transcription.**
+## YouTube ingestion
 
-## Phase 2 sub-phases implemented
-
-### 2.1 YouTube URL validation + metadata
-
-Supported common forms include:
+Notify accepts common recorded-video forms such as:
 
 ```text
 https://www.youtube.com/watch?v=VIDEO_ID
-https://youtube.com/watch?v=VIDEO_ID
 https://youtu.be/VIDEO_ID
 https://www.youtube.com/shorts/VIDEO_ID
 https://youtube.com/live/VIDEO_ID
 ```
 
-Query parameters do not affect canonical video identification. URLs are normalized to:
+URLs are normalized to a canonical video ID/URL. Metadata is extracted through the `yt-dlp` Python API with download disabled first. Current live/upcoming streams, private videos, deleted/unavailable videos, malformed URLs, and unsupported sources fail through typed domain errors.
+
+Video downloads are capped to 1080p by default with bounded retries, controlled internal filenames, disk checks, progress hooks, and cancellation. FFmpeg/ffprobe are detected locally; no browser cookies or YouTube API key are read automatically.
+
+## Normalized audio
+
+The Phase-2 audio artifact is:
 
 ```text
-https://www.youtube.com/watch?v=VIDEO_ID
+WAV
+pcm_s16le
+16 kHz
+mono
 ```
 
-Metadata is extracted through the `yt-dlp` Python API with download disabled. Notify stores a typed, bounded representation instead of persisting the entire raw `yt-dlp` payload.
+Extraction writes to a temporary file, validates the result, then atomically promotes it to `audio/audio.wav`.
 
-Current live/upcoming streams are rejected. Finished live replays may be processed like normal recorded videos when `yt-dlp` exposes a usable replay.
-
-Private, deleted, unavailable, malformed, or unsupported sources become domain-level job failures rather than raw stack traces.
-
-No YouTube API key and no browser cookies are required or accessed automatically.
-
-### 2.2 Video download
-
-The downloader uses `yt-dlp` behind a dedicated adapter and stores media only inside the job workspace.
-
-Default strategy:
-
-```text
-maximum height: 1080p
-preferred merge container: mp4
-bounded download retries
-bounded fragment retries
-```
-
-The actual filename is controlled internally (`video.*`); untrusted YouTube titles never become paths.
-
-Download progress is mapped into global job progress. Cancellation is checked from the `yt-dlp` progress hook. `.part`, `.ytdl`, and other temporary files never count as completed media.
-
-A configured maximum download size and best-effort disk-space check protect local storage.
-
-### 2.3 FFmpeg detection + media inspection
-
-Notify detects `ffmpeg` and `ffprobe` from PATH, or accepts explicitly configured binary paths.
-
-`ffprobe` JSON is normalized into typed media information including:
-
-- container
-- duration
-- file size / bitrate
-- video codec/profile
-- width / height
-- FPS (including fractional values such as `30000/1001`)
-- pixel format
-- rotation
-- audio codec
-- audio sample rate
-- channels / layout
-
-A missing video stream, corrupt/truncated media, ffprobe timeout, or missing required tool fails cleanly.
-
-### 2.4 Audio extraction
-
-FFmpeg extracts only audio and normalizes it using the equivalent settings:
-
-```text
--vn
--ac 1
--ar 16000
--c:a pcm_s16le
-```
-
-Extraction writes to `audio.tmp.wav` first. Only a successful, validated result is atomically promoted to `audio.wav`.
-
-Cancellation terminates FFmpeg and removes the temporary output. Extraction uses a duration-aware timeout and estimates WAV disk usage before starting.
-
-### 2.5 Caching, resume, and cleanup
-
-Cache validity requires both:
-
-```text
-completion checkpoint
-+
-valid underlying artifact
-```
-
-The dependency graph is:
+## Phase-2 caching
 
 ```text
 source URL
-    |
- metadata
-    |
-  video
-    |
-inspection
-    |
-  audio
+   ↓
+metadata
+   ↓
+video
+   ↓
+media inspection
+   ↓
+audio
 ```
 
-An upstream change invalidates dependent state. Examples:
+A cache entry requires a completion checkpoint **and** a valid artifact. Upstream changes invalidate downstream artifacts. Restart recovery uses files/fingerprints rather than trusting `job.stage` alone.
+
+# Phase 3 — visual frame analysis
+
+## 3.1 Frame sampling
+
+Phase 3 consumes the local Phase-2 video; it does not re-run YouTube logic.
+
+Default sampling:
 
 ```text
-video missing/change
-  -> redownload video
-  -> re-run inspection
-  -> re-extract audio
-
-audio missing
-  -> keep metadata/video/inspection
-  -> re-extract audio only
+FRAME_SAMPLE_FPS=1.0
 ```
 
-Known partial files are removed safely inside the job workspace. Cleanup can run in dry-run mode and deletes only expired terminal (`COMPLETED`, `FAILED`, `CANCELLED`) jobs; active/queued jobs are protected.
-
-### 2.6 Final integration + failure handling
-
-`IngestionPipeline` is the single Phase-2 orchestrator. It performs cache inspection, selects the resume point, runs only required stages, validates the final artifact chain, writes `ingestion.json`, and records `INGESTION_COMPLETE`.
-
-Failures include structured codes/categories such as input, YouTube, download, media, audio, storage, cancellation, and internal processing failures. Detailed diagnostics remain in per-job logs while the public job response gets a safe error object.
-
-Failed or cancelled jobs can be explicitly retried. Completed upstream artifacts are reused when valid.
-
-## Job lifecycle
+Examples:
 
 ```text
-QUEUED -> RUNNING -> COMPLETED
-   |         |
-   |         +--> FAILED -> retry -> QUEUED
-   |         |
-   +---------+--> CANCELLED -> retry -> QUEUED
+1 FPS   -> one frame each second
+2 FPS   -> one frame each 0.5 seconds
+0.5 FPS -> one frame each 2 seconds
 ```
 
-A job that was `RUNNING` when the application stopped is recovered as `QUEUED` at startup. Cache inspection then selects the first incomplete ingestion stage.
-
-## Processing stages currently used
+FFmpeg samples into:
 
 ```text
-PREPARING
-DOWNLOADING
-INSPECTING_MEDIA
-EXTRACTING_AUDIO
-INGESTION_COMPLETE
+frames/sampled.tmp/
 ```
 
-Future stages are still modeled for Phase 3+.
+and only after successful validation promotes it to:
 
-## API
+```text
+frames/sampled/
+```
+
+`frames/manifest.json` stores explicit numeric timestamps, source fingerprint, sampling configuration, frame count, relative paths, sizes, and an artifact fingerprint. Analysis never relies on filenames as the source of timestamp truth.
+
+Safety controls include:
+
+- maximum sampling FPS
+- maximum sampled-frame count
+- estimated JPEG disk usage
+- disk safety margin
+- duration-aware sampling timeout
+- cancellation that terminates FFmpeg
+- partial-directory cleanup
+
+## 3.2 Frame quality and preprocessing
+
+Phase 3 uses `opencv-python-headless`. Original sampled frames are never overwritten.
+
+Each valid sampled frame produces a derived analysis frame under:
+
+```text
+frames/processed/
+```
+
+The default analysis width is 640 px with aspect ratio preserved. Smaller frames are not upscaled.
+
+Per-frame classical CV measurements include:
+
+```text
+brightness          0..1
+contrast            0..1
+Laplacian sharpness
+edge density        0..1
+near-black ratio    0..1
+black flag
+very-dark flag
+blurry flag
+low-information flag
+quality score       0..1
+```
+
+Corrupt images are recorded rather than silently dropped. A small invalid ratio is tolerated; exceeding `MAX_INVALID_FRAME_RATIO` fails the stage.
+
+## 3.3 Visual difference scoring
+
+Consecutive processed frames are compared using four independent signals:
+
+```text
+1. mean absolute grayscale pixel difference
+2. SSIM difference
+3. perceptual hash distance (OpenCV DCT pHash implementation)
+4. Canny edge-map difference
+```
+
+All difference metrics are normalized so:
+
+```text
+0.0 = almost identical
+1.0 = extremely different
+```
+
+The default combined score is:
+
+```text
+difference =
+    pixel * 0.25
+  + SSIM  * 0.35
+  + pHash * 0.20
+  + edge  * 0.20
+```
+
+Weights do not need to sum to 1; Notify normalizes them internally. Individual metrics are preserved in `analysis/differences.json` together with mean/median/max and p50/p75/p90/p95/p99 score statistics.
+
+The comparison implementation keeps only neighboring images in memory rather than loading an entire lecture into RAM.
+
+## 3.4 Major visual changes
+
+Phase 3 does not use one brittle threshold such as `score > 0.5`.
+
+It derives lecture-specific thresholds using robust statistics:
+
+```text
+median
+MAD (median absolute deviation)
+p90
+p95
+p99
+absolute minimum floors
+```
+
+A simplified view is:
+
+```text
+major threshold = max(
+    configured absolute floor,
+    p95,
+    median + robust_multiplier * scaled_MAD
+)
+```
+
+Large nearby spikes are clustered into one transition and the strongest comparison becomes the representative timestamp. Black/fade sequences are collapsed into `BLACK_TRANSITION` events rather than emitted as repeated content changes. Invalid comparison gaps are preserved explicitly.
+
+Current conservative event types are:
+
+```text
+MAJOR_VISUAL_CHANGE
+VERY_MAJOR_VISUAL_CHANGE
+BLACK_TRANSITION
+INVALID_GAP
+```
+
+These events intentionally do **not** claim semantic meanings such as `NEW_SLIDE` or `BOARD_CLEARED` yet.
+
+## 3.5 Temporal timeline
+
+Point-level difference scores are converted into ordered visual-activity segments:
+
+```text
+STABLE
+CHANGING
+MAJOR_TRANSITION
+BLACK_TRANSITION
+INVALID
+```
+
+The timeline uses adaptive low-change thresholds plus an absolute stable ceiling, hysteresis, minimum stable/changing durations, and controlled weak-gap bridging.
+
+This avoids noisy state flicker such as:
+
+```text
+STABLE -> CHANGING -> STABLE -> CHANGING
+```
+
+when scores merely hover around one threshold.
+
+Major/black transitions and invalid regions remain hard boundaries. Actual timestamps drive all duration logic; Notify never assumes that one sampled frame equals one second.
+
+The most important Phase-4 handoff pattern is:
+
+```text
+CHANGING
+    ↓
+STABLE
+```
+
+which may later represent completed writing, code, a diagram, or a settled slide. Phase 3 does not decide that semantic meaning.
+
+## 3.6 Phase-3 cache and restart recovery
+
+The dependency graph is explicit:
+
+```text
+Phase-2 source video
+        ↓
+frame sampling
+        ↓
+preprocessing
+        ↓
+difference scoring
+        ↓
+major changes
+        ↓
+timeline
+```
+
+Every stage stores:
+
+```text
+algorithm/schema version
+configuration fingerprint
+upstream artifact fingerprint
+its own artifact fingerprint
+completion checkpoint
+```
+
+Cache states are:
+
+```text
+VALID
+MISSING
+STALE
+CORRUPT
+PARTIAL
+```
+
+Examples of precise invalidation:
+
+```text
+FRAME_SAMPLE_FPS changes
+  -> sampling + every downstream Phase-3 stage reruns
+
+ANALYSIS_FRAME_WIDTH changes
+  -> keep sampled frames
+  -> preprocessing + downstream rerun
+
+DIFF_SSIM_WEIGHT changes
+  -> keep all image artifacts
+  -> differences + downstream rerun
+
+MAJOR_CHANGE_MERGE_WINDOW_SECONDS changes
+  -> major changes + timeline rerun
+
+MIN_STABLE_DURATION_SECONDS changes
+  -> timeline only reruns
+```
+
+Known temporary artifacts such as `sampled.tmp`, `processed.tmp`, and atomic JSON temp files are cleaned before recovery. Paths are always resolved through the UUID job workspace.
+
+A recovered RUNNING job becomes QUEUED as established in Phase 1; Phase-3 artifact validation then selects the real resume stage. `job.stage` alone is not treated as truth.
+
+## 3.7 Integration and evaluation
+
+`FrameAnalysisPipeline` is the single Phase-3 orchestrator. `NotifyPipeline` runs:
+
+```text
+IngestionPipeline(finalize_job=False)
+        ↓
+FrameAnalysisPipeline(finalize_job=True)
+```
+
+so Phase 2 can finish without prematurely terminalizing the job.
+
+A validated `analysis/summary.json` contains counts, artifact fingerprints, per-stage timing, and disk usage. Only after final validation is `FRAME_ANALYSIS_COMPLETE` written.
+
+`COMPLETED` currently means **all implemented work through Phase 3 has finished**. It does not mean screenshots or a PDF exist. The success message is:
+
+```text
+Frame analysis completed; ready for stability candidate generation
+```
+
+### Evaluation tool
+
+Evaluation is downstream diagnostics only; it never changes production thresholds automatically.
+
+Run:
+
+```bash
+python scripts/evaluate_phase3.py storage/jobs/<job_id>
+```
+
+The report includes:
+
+- sampled/valid/invalid/black/blurry frame counts
+- p50/p75/p90/p95/p99/max difference scores
+- major events per minute
+- stable/changing ratios
+- segment density
+- mean/median stable and changing durations
+- example event timestamps
+- warnings for suspicious fragmentation, invalid-frame ratios, extreme event density, or almost-all-stable/changing timelines
+
+It writes:
+
+```text
+analysis/evaluation.json
+```
+
+Changing the evaluation script does not invalidate Phase-3 production artifacts.
+
+# API
 
 | Method | Endpoint | Purpose |
 |---|---|---|
@@ -236,23 +428,36 @@ Future stages are still modeled for Phase 3+.
 | `GET` | `/api/jobs` | List jobs |
 | `GET` | `/api/jobs/{job_id}` | Live status/progress/error |
 | `POST` | `/api/jobs/{job_id}/cancel` | Cancel queued/running work |
-| `POST` | `/api/jobs/{job_id}/retry` | Retry failed/cancelled job |
+| `POST` | `/api/jobs/{job_id}/retry` | Retry failed/cancelled work |
 | `GET` | `/api/jobs/{job_id}/metadata` | Normalized YouTube metadata |
-| `GET` | `/api/jobs/{job_id}/ingestion` | Final Phase-2 ingestion result |
-| `GET` | `/api/system/capabilities` | CPU/RAM/GPU and FFmpeg tool availability |
-| `POST` | `/api/system/cleanup` | Dry-run or execute retention cleanup |
+| `GET` | `/api/jobs/{job_id}/ingestion` | Phase-2 ingestion result |
+| `GET` | `/api/jobs/{job_id}/analysis` | Compact Phase-3 summary |
+| `GET` | `/api/jobs/{job_id}/analysis/cache` | Phase-3 cache states + resume stage |
+| `GET` | `/api/system/capabilities` | CPU/RAM/GPU + FFmpeg availability |
+| `POST` | `/api/system/cleanup` | Dry-run/execute retention cleanup |
 
-Create a job:
+The analysis summary endpoint intentionally does not return thousands of frame/comparison records.
 
-```json
-{
-  "source_url": "https://www.youtube.com/watch?v=VIDEO_ID"
-}
+# Progress allocation
+
+Current processing allocation:
+
+```text
+Phase 2 ingestion               0-50
+3.1 frame sampling             50-60
+3.2 frame preprocessing        60-67
+3.3 difference scoring         67-74
+3.4 major transitions          74-79
+3.5 temporal timeline          79-84
+3.7 final validation           84-86
+terminal development state       100
 ```
 
-At this stage `COMPLETED` means **all currently implemented Phase-2 ingestion work has finished**. The job message explicitly says the lecture is ready for frame analysis; it does not imply a PDF exists.
+The unused range is intentionally reserved for later candidate generation, transcription, VLM judging, screenshot selection, deduplication, and PDF generation.
 
-## Configuration
+Global job progress is monotonic, including after restart.
+
+# Configuration
 
 Copy:
 
@@ -263,26 +468,58 @@ cp .env.example .env
 Important Phase-2 values:
 
 ```text
-PROCESSOR_MODE=ingestion
+PROCESSOR_MODE=analysis
 VIDEO_MAX_HEIGHT=1080
 VIDEO_PREFERRED_CONTAINER=mp4
 MAX_VIDEO_DOWNLOAD_GB=4
-VIDEO_DOWNLOAD_RETRIES=3
-VIDEO_FRAGMENT_RETRIES=3
-DOWNLOAD_DISK_SAFETY_MARGIN_MB=512
 FFMPEG_PATH=
 FFPROBE_PATH=
-MEDIA_PROBE_TIMEOUT_SECONDS=30
 AUDIO_EXTRACTION_TIMEOUT_MULTIPLIER=3
-AUDIO_DISK_SAFETY_MARGIN_MB=256
-AUDIO_DURATION_TOLERANCE_RATIO=0.01
 ```
 
-Blank FFmpeg paths mean auto-detect from PATH.
+Important Phase-3 values:
 
-`PROCESSOR_MODE=fake` is retained only for deterministic foundation tests/development. Normal usage should use `ingestion`.
+```text
+FRAME_SAMPLE_FPS=1.0
+FRAME_SAMPLE_MAX_FPS=5.0
+MAX_SAMPLED_FRAMES=20000
+FRAME_ESTIMATED_SIZE_KB=150
+FRAME_DISK_SAFETY_MARGIN_MB=512
+FRAME_JPEG_QUALITY=90
 
-## Install
+ANALYSIS_FRAME_WIDTH=640
+MAX_INVALID_FRAME_RATIO=0.02
+DARK_FRAME_THRESHOLD=0.05
+BLACK_PIXEL_VALUE_THRESHOLD=10
+BLACK_PIXEL_RATIO_THRESHOLD=0.95
+BLUR_VARIANCE_THRESHOLD=50
+
+DIFF_PIXEL_WEIGHT=0.25
+DIFF_SSIM_WEIGHT=0.35
+DIFF_PHASH_WEIGHT=0.20
+DIFF_EDGE_WEIGHT=0.20
+DIFF_PHASH_SIZE=8
+DIFF_CANNY_LOW=100
+DIFF_CANNY_HIGH=200
+MAX_INVALID_COMPARISON_RATIO=0.02
+
+MAJOR_CHANGE_MIN_SCORE=0.30
+VERY_MAJOR_CHANGE_MIN_SCORE=0.60
+MAJOR_CHANGE_ROBUST_MULTIPLIER=6
+MAJOR_CHANGE_MERGE_WINDOW_SECONDS=2
+
+TIMELINE_STABLE_MIN_SCORE=0.03
+TIMELINE_STABLE_MAX_SCORE=0.10
+TIMELINE_STABLE_ROBUST_MULTIPLIER=1.5
+TIMELINE_EXIT_STABLE_FACTOR=1.6
+MIN_STABLE_DURATION_SECONDS=2
+MIN_CHANGING_DURATION_SECONDS=1
+MAX_STABLE_GAP_SECONDS=0.5
+```
+
+Thresholds are deliberately versioned/configurable because lecture styles differ. Evaluation should guide tuning; it must not silently rewrite `.env`.
+
+# Install
 
 Python 3.11+ is required.
 
@@ -295,6 +532,7 @@ Windows PowerShell:
 ```powershell
 .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
+winget install Gyan.FFmpeg
 ```
 
 macOS/Linux:
@@ -304,21 +542,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-### FFmpeg
-
-Windows (one option):
-
-```powershell
-winget install Gyan.FFmpeg
-```
-
-macOS:
-
-```bash
-brew install ffmpeg
-```
-
-Ubuntu/Debian:
+Ubuntu/Debian FFmpeg:
 
 ```bash
 sudo apt update
@@ -332,41 +556,70 @@ ffmpeg -version
 ffprobe -version
 ```
 
-## Run
+# Run
 
 ```bash
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Open API docs at:
+API docs:
 
 ```text
 http://127.0.0.1:8000/docs
 ```
 
-## Tests
+# Tests
 
 ```bash
 pytest
 ```
 
-Automated tests deliberately mock YouTube and FFmpeg process boundaries. CI therefore does **not** need live YouTube access and does not depend on a particular system FFmpeg installation.
+Tests do not require live YouTube access. External YouTube/FFmpeg boundaries are mocked where appropriate while the real application orchestration, OpenCV preprocessing, difference metrics, robust thresholding, temporal segmentation, cache logic, and FastAPI/background runner are exercised.
 
-Tests cover Phase-1 regression behavior plus URL parsing, metadata normalization, format selection, downloader progress/cancellation, media parsing, audio command/progress behavior, cache dependency validation, partial cleanup, retry, failure classification, the complete Phase-2 orchestrator, and the real FastAPI/background-runner flow with mocked external boundaries.
+Phase-3 coverage includes:
 
-## Optional real-world smoke test
+- sampling interval/count/config validation
+- FFmpeg command construction
+- max-frame/disk safeguards
+- sampling success/cancellation/timeout cleanup
+- aspect-ratio resize without upscaling
+- brightness/contrast/sharpness/edge/black-frame metrics
+- corrupt-frame tolerance
+- pixel/SSIM/pHash/edge comparison behavior
+- metric weight normalization
+- invalid comparison handling
+- adaptive major thresholds
+- event clustering and black transitions
+- stable/changing timeline smoothing and hysteresis
+- timestamp-aware duration
+- precise cache invalidation and restart selection
+- duplicate-execution serialization
+- full Phase-2 -> Phase-3 FastAPI flow with mocked external media boundaries
+- Phase-3 evaluation diagnostics
 
-Not part of CI. Requires internet and FFmpeg:
+# Manual tools
+
+Phase-2 real ingestion smoke test:
 
 ```bash
 python scripts/smoke_ingestion.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-It creates a real Notify job and prints stage/progress until ingestion finishes.
+Standalone FFmpeg frame-sampling smoke test:
 
-## Security / local-first guarantees
+```bash
+python scripts/sample_frames.py path/to/video.mp4 --fps 1
+```
 
-Phase 2 uses:
+Evaluate an already completed Phase-3 workspace:
+
+```bash
+python scripts/evaluate_phase3.py storage/jobs/<job_id>
+```
+
+# Security and local-first guarantees
+
+Current implementation uses:
 
 - no paid API
 - no cloud storage
@@ -376,31 +629,45 @@ Phase 2 uses:
 - no database server
 - no browser-cookie scraping
 - no YouTube API key
-- no ML model yet
+- no OCR
+- no Whisper yet
+- no VLM/Qwen yet
+- no GPU requirement for Phase 3
 
-Subprocess commands use argument arrays rather than shell strings. Artifact paths are constrained to UUID job workspaces, and external titles are not used as filenames.
+Subprocess commands use argument arrays instead of `shell=True`. User-controlled video titles never become filesystem paths. Persisted relative artifact paths are validated to remain inside the UUID job workspace before use/deletion.
 
-## Phase 3 handoff
+# Phase 4 handoff
 
-Phase 3 can assume a successful ingestion provides:
+Phase 4 may assume a validated Phase-3 job provides:
 
 ```text
-source video path
-duration
-width
-height
-fps
-video codec
-normalized audio path
+FRAME_ANALYSIS_COMPLETE
+source/video.*
+frames/manifest.json
+frames/preprocessing.json
+analysis/differences.json
+analysis/major_changes.json
+analysis/timeline.json
+analysis/summary.json
 ```
 
-Phase 3 will implement **frame sampling + visual change detection**. It should not re-run YouTube validation/download logic.
+Phase 4 should consume the temporal pattern, especially:
+
+```text
+CHANGING -> STABLE
+```
+
+and decide whether a stable period is a useful candidate for a completed slide, board, diagram, or code state.
+
+Phase 4 must **not** rerun YouTube ingestion or visual-difference scoring when Phase-3 artifacts validate.
 
 Not implemented yet:
 
-- OpenCV frame sampling
-- SSIM / scene-change detection
-- Whisper/faster-whisper transcription
-- Qwen3-VL
-- screenshot selection
+- screenshot candidate generation
+- completed-writing/slide/code/diagram classification
+- faster-whisper transcription
+- transcript/frame alignment
+- Qwen3-VL semantic judging
+- best high-quality screenshot extraction
+- pHash/SSIM final screenshot deduplication
 - PDF generation

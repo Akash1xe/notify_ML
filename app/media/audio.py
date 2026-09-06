@@ -6,7 +6,7 @@ import shutil
 import time
 from collections import deque
 from pathlib import Path
-from typing import Callable
+from typing import Awaitable, Callable
 
 from app.core.config import AppSettings
 from app.core.exceptions import (

@@ -5,13 +5,22 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import ValidationError
 
-from app.api.dependencies import get_job_runner, get_job_service, get_workspace
+from app.api.dependencies import (
+    get_frame_analysis_cache,
+    get_frame_analysis_repository,
+    get_job_runner,
+    get_job_service,
+    get_workspace,
+)
 from app.ingestion.models import IngestionResult
 from app.ingestion.youtube.models import YouTubeMetadata
 from app.jobs.models import Job, JobCreateRequest, JobListResponse
 from app.jobs.runner import JobRunner
 from app.jobs.service import JobService
 from app.storage.workspace import WorkspaceManager
+from app.video_analysis.cache import FrameAnalysisCacheManager
+from app.video_analysis.models import AnalysisCacheSnapshot, FrameAnalysisSummary
+from app.video_analysis.repository import FrameAnalysisRepository
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -88,3 +97,40 @@ def get_ingestion(
         return IngestionResult.model_validate(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError, ValidationError) as exc:
         raise HTTPException(status_code=500, detail="Stored ingestion result is invalid") from exc
+
+
+@router.get("/{job_id}/analysis", response_model=FrameAnalysisSummary)
+def get_analysis_summary(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: FrameAnalysisRepository = Depends(get_frame_analysis_repository),
+) -> FrameAnalysisSummary:
+    service.get_job(job_id)
+    try:
+        return repository.load_summary(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Frame analysis is not available yet") from exc
+
+
+@router.get("/{job_id}/analysis/cache", response_model=AnalysisCacheSnapshot)
+def get_analysis_cache_state(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    workspace: WorkspaceManager = Depends(get_workspace),
+    cache: FrameAnalysisCacheManager = Depends(get_frame_analysis_cache),
+) -> AnalysisCacheSnapshot:
+    service.get_job(job_id)
+    ingestion_path = workspace.ingestion_path(job_id)
+    if not ingestion_path.exists():
+        raise HTTPException(status_code=404, detail="Phase-2 ingestion is not available yet")
+    try:
+        ingestion = IngestionResult.model_validate(json.loads(ingestion_path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise HTTPException(status_code=500, detail="Stored ingestion result is invalid") from exc
+    root = workspace.workspace(job_id)
+    source = (root / ingestion.source_video).resolve()
+    try:
+        source.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail="Stored source path is invalid") from exc
+    return cache.inspect(job_id, source)

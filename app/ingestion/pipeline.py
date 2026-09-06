@@ -18,12 +18,13 @@ from app.ingestion.cache import (
     CacheManager,
 )
 from app.ingestion.models import IngestionResult, StageTimings
-from app.ingestion.youtube.models import DownloadProgress
+from app.ingestion.youtube.models import DownloadProgress, DownloadResult, YouTubeMetadata
 from app.ingestion.youtube.service import YouTubeService
 from app.jobs.checkpoints import CheckpointStore
 from app.jobs.models import JobStage, JobStatus
 from app.jobs.service import JobService
 from app.media.audio import AudioExtractor
+from app.media.models import AudioResult, MediaInspection
 from app.media.probe import MediaInspector, fingerprint
 from app.media.tools import MediaToolsService
 from app.storage.workspace import WorkspaceManager, atomic_write_json
@@ -105,7 +106,7 @@ class IngestionPipeline:
             raise CacheValidationError("Cached artifact path escaped the job workspace.") from exc
         return path
 
-    async def process(self, job_id: str) -> None:
+    async def process(self, job_id: str, *, finalize_job: bool = True) -> IngestionResult:
         started = time.monotonic()
         timings = StageTimings()
         self._cache.cleanup_partial_artifacts(job_id)
@@ -240,10 +241,12 @@ class IngestionPipeline:
         self._checkpoints.mark_completed(job_id, CP_INGESTION)
         self._stage(job_id, JobStage.INGESTION_COMPLETE, "Ingestion complete")
         self._events.write(job_id, level="INFO", stage="INGESTION_COMPLETE", message="Phase 2 ingestion complete")
-        self._jobs.mark_completed(
-            job_id,
-            message="Phase 2 ingestion completed; ready for frame analysis",
-        )
+        if finalize_job:
+            self._jobs.mark_completed(
+                job_id,
+                message="Phase 2 ingestion completed; ready for frame analysis",
+            )
+        return result
 
     def load_result(self, job_id: str) -> IngestionResult | None:
         path = self._workspace.ingestion_path(job_id)

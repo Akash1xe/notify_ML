@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from app.core.config import AppSettings
 from app.core.exceptions import VideoStreamMissingError
 from app.media.audio import build_audio_command, parse_ffmpeg_progress_value
 from app.media.models import FileFingerprint

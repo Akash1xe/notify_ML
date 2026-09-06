@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.config import AppSettings
 from app.core.exceptions import InvalidYouTubeURLError, LiveVideoNotSupportedError
 from app.ingestion.youtube.downloader import build_format_selector, estimate_download_bytes
 from app.ingestion.youtube.metadata import YouTubeMetadataExtractor

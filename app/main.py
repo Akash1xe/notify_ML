@@ -23,6 +23,14 @@ from app.media.audio import AudioExtractor
 from app.media.probe import MediaInspector
 from app.media.tools import MediaToolsService
 from app.storage.workspace import WorkspaceManager
+from app.video_analysis.cache import FrameAnalysisCacheManager
+from app.video_analysis.changes import MajorChangeDetector
+from app.video_analysis.differences import VisualDifferenceService
+from app.video_analysis.pipeline import FrameAnalysisPipeline, NotifyPipeline
+from app.video_analysis.preprocessing import FramePreprocessor
+from app.video_analysis.repository import FrameAnalysisRepository
+from app.video_analysis.sampling import FrameSampler
+from app.video_analysis.timeline import TemporalTimelineService
 
 
 def create_app(settings: AppSettings | None = None) -> FastAPI:
@@ -46,7 +54,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             YouTubeMetadataExtractor(),
             YouTubeDownloadManager(resolved_settings),
         )
-        cache = CacheManager(workspace, checkpoints)
+        ingestion_cache = CacheManager(workspace, checkpoints)
         ingestion = IngestionPipeline(
             settings=resolved_settings,
             jobs=service,
@@ -57,13 +65,39 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             media_tools=media_tools,
             media_inspector=media_inspector,
             audio_extractor=audio_extractor,
-            cache=cache,
+            cache=ingestion_cache,
         )
-        processor = (
-            FakeProcessor(service, checkpoints, resolved_settings)
-            if resolved_settings.processor_mode == "fake"
-            else ingestion
+
+        analysis_repository = FrameAnalysisRepository(workspace)
+        analysis_cache = FrameAnalysisCacheManager(resolved_settings, workspace, checkpoints)
+        frame_analysis = FrameAnalysisPipeline(
+            settings=resolved_settings,
+            jobs=service,
+            workspace=workspace,
+            checkpoints=checkpoints,
+            events=event_logger,
+            sampler=FrameSampler(resolved_settings, workspace, media_tools),
+            preprocessor=FramePreprocessor(resolved_settings, workspace),
+            differences=VisualDifferenceService(resolved_settings, workspace),
+            major_changes=MajorChangeDetector(resolved_settings, workspace),
+            timeline=TemporalTimelineService(resolved_settings, workspace),
+            cache=analysis_cache,
+            repository=analysis_repository,
         )
+        full_pipeline = NotifyPipeline(
+            ingestion=ingestion,
+            frame_analysis=frame_analysis,
+            ingestion_cache=ingestion_cache,
+            jobs=service,
+        )
+
+        if resolved_settings.processor_mode == "fake":
+            processor = FakeProcessor(service, checkpoints, resolved_settings)
+        elif resolved_settings.processor_mode == "ingestion":
+            processor = ingestion
+        else:
+            processor = full_pipeline
+
         runner = JobRunner(
             service,
             processor,
@@ -82,11 +116,15 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         app.state.media_tools = media_tools
         app.state.media_inspector = media_inspector
         app.state.audio_extractor = audio_extractor
-        app.state.cache_manager = cache
+        app.state.cache_manager = ingestion_cache
         app.state.ingestion_pipeline = ingestion
+        app.state.frame_analysis_cache = analysis_cache
+        app.state.frame_analysis_repository = analysis_repository
+        app.state.frame_analysis_pipeline = frame_analysis
+        app.state.notify_pipeline = full_pipeline
         app.state.cleanup_manager = cleanup
 
-        await runner.start()  # recovery happens before maintenance cleanup
+        await runner.start()
         cleanup.cleanup(dry_run=False)
         try:
             yield
@@ -95,7 +133,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     app = FastAPI(
         title=resolved_settings.app_name,
-        version="0.2.0",
+        version="0.3.0",
         lifespan=lifespan,
     )
     app.include_router(health.router)

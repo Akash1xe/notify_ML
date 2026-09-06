@@ -80,7 +80,6 @@ def test_recover_interrupted_job(tmp_path: Path):
     assert recovered[0].status is JobStatus.QUEUED
     assert recovered[0].stage is JobStage.QUEUED
 
-
 def test_failed_or_cancelled_job_can_be_retried(tmp_path: Path):
     service = build_service(tmp_path)
     job = service.create_job("https://youtube.com/watch?v=abcdef12345")

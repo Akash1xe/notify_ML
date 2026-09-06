@@ -46,6 +46,5 @@ class JobRepository:
                 with self._lock, path.open("r", encoding="utf-8") as fh:
                     jobs.append(Job.model_validate(json.load(fh)))
             except (OSError, json.JSONDecodeError, ValidationError):
-                # A broken workspace should not make all jobs unavailable.
                 continue
         return sorted(jobs, key=lambda item: item.created_at, reverse=True)

@@ -129,3 +129,49 @@ class CacheValidationError(NotifyError):
 class CleanupError(NotifyError):
     code = "cleanup_failed"
     category = "STORAGE"
+
+
+class FrameSamplingError(NotifyError):
+    code = "frame_sampling_failed"
+    category = "FRAME_ANALYSIS"
+
+
+class FrameSamplingTimeoutError(FrameSamplingError):
+    code = "frame_sampling_timeout"
+
+
+class FrameOutputMissingError(FrameSamplingError):
+    code = "frame_output_missing"
+
+
+class FramePreprocessingError(NotifyError):
+    code = "frame_preprocessing_failed"
+    category = "FRAME_ANALYSIS"
+
+
+class TooManyInvalidFramesError(FramePreprocessingError):
+    code = "too_many_invalid_frames"
+
+
+class DifferenceAnalysisError(NotifyError):
+    code = "difference_analysis_failed"
+    category = "FRAME_ANALYSIS"
+
+
+class TooManyInvalidComparisonsError(DifferenceAnalysisError):
+    code = "too_many_invalid_comparisons"
+
+
+class MajorChangeAnalysisError(NotifyError):
+    code = "major_change_analysis_failed"
+    category = "FRAME_ANALYSIS"
+
+
+class TimelineGenerationError(NotifyError):
+    code = "timeline_generation_failed"
+    category = "FRAME_ANALYSIS"
+
+
+class FrameAnalysisValidationError(NotifyError):
+    code = "frame_analysis_validation_failed"
+    category = "FRAME_ANALYSIS"

@@ -4,6 +4,10 @@ import json
 import logging
 from datetime import UTC, datetime
 from threading import RLock
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.storage.workspace import WorkspaceManager
 
 
 class ContextFormatter(logging.Formatter):
@@ -46,8 +50,6 @@ def log_job(
 
 
 class JobEventLogger:
-    """Small append-only per-job event log stored as NDJSON."""
-
     def __init__(self, workspace_manager: "WorkspaceManager") -> None:
         self._workspace_manager = workspace_manager
         self._lock = RLock()
@@ -66,7 +68,4 @@ class JobEventLogger:
             with self._lock, (log_dir / "events.ndjson").open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
         except OSError:
-            logging.getLogger(__name__).exception("Unable to write per-job event log")
-
-
-from app.storage.workspace import WorkspaceManager  # noqa: E402  (typing/runtime cycle-safe)
+            logging.getLogger(__name__).exception("Unable to append per-job event log")

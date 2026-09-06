@@ -15,6 +15,7 @@ WORKSPACE_DIRS = (
     "source",
     "audio",
     "frames",
+    "analysis",
     "candidates",
     "screenshots",
     "transcript",
@@ -112,6 +113,42 @@ class WorkspaceManager:
 
     def frames_dir(self, job_id: str) -> Path:
         return self.workspace(job_id) / "frames"
+
+    def sampled_frames_dir(self, job_id: str) -> Path:
+        return self.frames_dir(job_id) / "sampled"
+
+    def sampled_frames_temp_dir(self, job_id: str) -> Path:
+        return self.frames_dir(job_id) / "sampled.tmp"
+
+    def frame_manifest_path(self, job_id: str) -> Path:
+        return self.frames_dir(job_id) / "manifest.json"
+
+    def processed_frames_dir(self, job_id: str) -> Path:
+        return self.frames_dir(job_id) / "processed"
+
+    def processed_frames_temp_dir(self, job_id: str) -> Path:
+        return self.frames_dir(job_id) / "processed.tmp"
+
+    def preprocessing_manifest_path(self, job_id: str) -> Path:
+        return self.frames_dir(job_id) / "preprocessing.json"
+
+    def analysis_dir(self, job_id: str) -> Path:
+        return self.workspace(job_id) / "analysis"
+
+    def differences_path(self, job_id: str) -> Path:
+        return self.analysis_dir(job_id) / "differences.json"
+
+    def major_changes_path(self, job_id: str) -> Path:
+        return self.analysis_dir(job_id) / "major_changes.json"
+
+    def timeline_path(self, job_id: str) -> Path:
+        return self.analysis_dir(job_id) / "timeline.json"
+
+    def analysis_summary_path(self, job_id: str) -> Path:
+        return self.analysis_dir(job_id) / "summary.json"
+
+    def evaluation_path(self, job_id: str) -> Path:
+        return self.analysis_dir(job_id) / "evaluation.json"
 
     def candidates_dir(self, job_id: str) -> Path:
         return self.workspace(job_id) / "candidates"
