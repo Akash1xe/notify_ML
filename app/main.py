@@ -7,18 +7,21 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import health, jobs, system
 from app.core.config import AppSettings, get_settings
-from app.core.exceptions import (
-    InvalidJobTransitionError,
-    JobNotFoundError,
-    NotifyError,
-    StorageError,
-)
+from app.core.exceptions import InvalidJobTransitionError, JobNotFoundError, NotifyError, StorageError
 from app.core.logging import JobEventLogger, configure_logging
+from app.ingestion.cache import CacheManager, CleanupManager
+from app.ingestion.pipeline import IngestionPipeline
+from app.ingestion.youtube.downloader import YouTubeDownloadManager
+from app.ingestion.youtube.metadata import YouTubeMetadataExtractor
+from app.ingestion.youtube.service import YouTubeService
 from app.jobs.checkpoints import CheckpointStore
 from app.jobs.processor import FakeProcessor
 from app.jobs.repository import JobRepository
 from app.jobs.runner import JobRunner
 from app.jobs.service import JobService
+from app.media.audio import AudioExtractor
+from app.media.probe import MediaInspector
+from app.media.tools import MediaToolsService
 from app.storage.workspace import WorkspaceManager
 
 
@@ -34,13 +37,40 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         service = JobService(repository, workspace)
         checkpoints = CheckpointStore(workspace)
         event_logger = JobEventLogger(workspace)
-        processor = FakeProcessor(service, checkpoints, resolved_settings)
+
+        media_tools = MediaToolsService(resolved_settings)
+        media_inspector = MediaInspector(resolved_settings, media_tools)
+        audio_extractor = AudioExtractor(resolved_settings, media_tools, media_inspector)
+        youtube = YouTubeService(
+            workspace,
+            YouTubeMetadataExtractor(),
+            YouTubeDownloadManager(resolved_settings),
+        )
+        cache = CacheManager(workspace, checkpoints)
+        ingestion = IngestionPipeline(
+            settings=resolved_settings,
+            jobs=service,
+            workspace=workspace,
+            checkpoints=checkpoints,
+            events=event_logger,
+            youtube=youtube,
+            media_tools=media_tools,
+            media_inspector=media_inspector,
+            audio_extractor=audio_extractor,
+            cache=cache,
+        )
+        processor = (
+            FakeProcessor(service, checkpoints, resolved_settings)
+            if resolved_settings.processor_mode == "fake"
+            else ingestion
+        )
         runner = JobRunner(
             service,
             processor,
             event_logger,
             max_concurrent_jobs=resolved_settings.max_concurrent_jobs,
         )
+        cleanup = CleanupManager(workspace, service, resolved_settings.job_retention_hours)
 
         app.state.settings = resolved_settings
         app.state.workspace_manager = workspace
@@ -48,17 +78,16 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         app.state.job_service = service
         app.state.checkpoint_store = checkpoints
         app.state.job_runner = runner
+        app.state.youtube_service = youtube
+        app.state.media_tools = media_tools
+        app.state.media_inspector = media_inspector
+        app.state.audio_extractor = audio_extractor
+        app.state.cache_manager = cache
+        app.state.ingestion_pipeline = ingestion
+        app.state.cleanup_manager = cleanup
 
-        protected = {
-            job.id
-            for job in service.list_jobs()
-            if job.status.value in {"RUNNING", "QUEUED"}
-        }
-        workspace.cleanup_expired(
-            resolved_settings.job_retention_hours,
-            protected_job_ids=protected,
-        )
-        await runner.start()
+        await runner.start()  # recovery happens before maintenance cleanup
+        cleanup.cleanup(dry_run=False)
         try:
             yield
         finally:
@@ -66,7 +95,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     app = FastAPI(
         title=resolved_settings.app_name,
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
     )
     app.include_router(health.router)
@@ -78,9 +107,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         return JSONResponse(status_code=404, content={"error": exc.code, "message": str(exc)})
 
     @app.exception_handler(InvalidJobTransitionError)
-    async def invalid_transition_handler(
-        _: Request, exc: InvalidJobTransitionError
-    ) -> JSONResponse:
+    async def invalid_transition_handler(_: Request, exc: InvalidJobTransitionError) -> JSONResponse:
         return JSONResponse(status_code=409, content={"error": exc.code, "message": str(exc)})
 
     @app.exception_handler(StorageError)

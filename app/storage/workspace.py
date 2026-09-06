@@ -83,11 +83,32 @@ class WorkspaceManager:
     def checkpoints_path(self, job_id: str) -> Path:
         return self.workspace(job_id) / "checkpoints.json"
 
+    def ingestion_path(self, job_id: str) -> Path:
+        return self.workspace(job_id) / "ingestion.json"
+
     def source_dir(self, job_id: str) -> Path:
         return self.workspace(job_id) / "source"
 
+    def youtube_metadata_path(self, job_id: str) -> Path:
+        return self.source_dir(job_id) / "metadata.json"
+
+    def download_manifest_path(self, job_id: str) -> Path:
+        return self.source_dir(job_id) / "download.json"
+
+    def media_inspection_path(self, job_id: str) -> Path:
+        return self.source_dir(job_id) / "media.json"
+
     def audio_dir(self, job_id: str) -> Path:
         return self.workspace(job_id) / "audio"
+
+    def audio_path(self, job_id: str) -> Path:
+        return self.audio_dir(job_id) / "audio.wav"
+
+    def audio_temp_path(self, job_id: str) -> Path:
+        return self.audio_dir(job_id) / "audio.tmp.wav"
+
+    def audio_manifest_path(self, job_id: str) -> Path:
+        return self.audio_dir(job_id) / "audio.json"
 
     def frames_dir(self, job_id: str) -> Path:
         return self.workspace(job_id) / "frames"
@@ -110,11 +131,33 @@ class WorkspaceManager:
     def logs_dir(self, job_id: str) -> Path:
         return self.workspace(job_id) / "logs"
 
+    def relative_to_workspace(self, job_id: str, path: Path) -> str:
+        resolved = path.resolve()
+        workspace = self.workspace(job_id)
+        try:
+            return resolved.relative_to(workspace).as_posix()
+        except ValueError as exc:
+            raise StorageError("Artifact path is outside job workspace") from exc
+
+    def workspace_size(self, job_id: str) -> int:
+        total = 0
+        root = self.workspace(job_id)
+        if not root.exists():
+            return 0
+        for path in root.rglob("*"):
+            if path.is_file():
+                try:
+                    total += path.stat().st_size
+                except OSError:
+                    continue
+        return total
+
     def cleanup_expired(
         self,
         retention_hours: int,
         *,
         protected_job_ids: set[str] | None = None,
+        dry_run: bool = False,
     ) -> list[str]:
         self.ensure_root()
         protected = {str(UUID(job_id)) for job_id in (protected_job_ids or set())}
@@ -130,6 +173,7 @@ class WorkspaceManager:
                 continue
             modified = datetime.fromtimestamp(child.stat().st_mtime, tz=UTC)
             if modified < cutoff:
-                shutil.rmtree(child)
+                if not dry_run:
+                    shutil.rmtree(child)
                 deleted.append(child.name)
         return deleted

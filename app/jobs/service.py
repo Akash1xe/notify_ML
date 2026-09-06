@@ -35,7 +35,8 @@ class JobService:
         validate_transition(job.status, JobStatus.RUNNING)
         job.status = JobStatus.RUNNING
         job.stage = JobStage.PREPARING
-        job.started_at = datetime.now(UTC)
+        job.started_at = job.started_at or datetime.now(UTC)
+        job.completed_at = None
         job.message = "Processing started"
         job.error = None
         return self._save(job)
@@ -56,27 +57,42 @@ class JobService:
         job = self.get_job(job_id)
         if job.status is not JobStatus.RUNNING:
             raise InvalidJobTransitionError("Only running jobs can update progress")
-        job.progress = progress
+        # Global progress is monotonic across all processing stages.
+        job.progress = max(job.progress, progress)
         if message is not None:
             job.message = message
         return self._save(job)
 
-    def mark_completed(self, job_id: str) -> Job:
+    def mark_completed(self, job_id: str, *, message: str = "Processing completed") -> Job:
         job = self.get_job(job_id)
         validate_transition(job.status, JobStatus.COMPLETED)
         job.status = JobStatus.COMPLETED
         job.stage = JobStage.COMPLETED
         job.progress = 100
-        job.message = "Processing completed"
+        job.message = message
         job.completed_at = datetime.now(UTC)
         return self._save(job)
 
-    def mark_failed(self, job_id: str, *, code: str, message: str) -> Job:
+    def mark_failed(
+        self,
+        job_id: str,
+        *,
+        code: str,
+        message: str,
+        category: str | None = None,
+        failed_stage: str | None = None,
+    ) -> Job:
         job = self.get_job(job_id)
         validate_transition(job.status, JobStatus.FAILED)
+        original_stage = failed_stage or job.stage.value
         job.status = JobStatus.FAILED
         job.stage = JobStage.FAILED
-        job.error = JobErrorInfo(code=code, message=message)
+        job.error = JobErrorInfo(
+            code=code,
+            message=message,
+            category=category,
+            failed_stage=original_stage,
+        )
         job.message = "Processing failed"
         job.completed_at = datetime.now(UTC)
         return self._save(job)
@@ -90,12 +106,22 @@ class JobService:
         job.completed_at = datetime.now(UTC)
         return self._save(job)
 
+
+    def retry_job(self, job_id: str) -> Job:
+        job = self.get_job(job_id)
+        if job.status not in {JobStatus.FAILED, JobStatus.CANCELLED}:
+            raise InvalidJobTransitionError("Only failed or cancelled jobs can be retried")
+        job.status = JobStatus.QUEUED
+        job.stage = JobStage.QUEUED
+        job.message = "Job queued for retry"
+        job.completed_at = None
+        job.error = None
+        return self._save(job)
+
     def recover_interrupted_jobs(self) -> list[Job]:
         recovered: list[Job] = []
         for job in self.list_jobs():
             if job.status is JobStatus.RUNNING:
-                # Recovery is intentionally a special transition. A normal API
-                # caller can never move RUNNING back to QUEUED.
                 job.status = JobStatus.QUEUED
                 job.stage = JobStage.QUEUED
                 job.message = "Recovered after application restart; queued for retry"

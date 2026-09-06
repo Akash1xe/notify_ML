@@ -9,6 +9,10 @@ from enum import Enum
 import psutil
 from pydantic import BaseModel
 
+from app.core.config import AppSettings
+from app.media.models import MediaToolsCapabilities
+from app.media.tools import MediaToolsService
+
 
 class ProcessingProfile(str, Enum):
     LOW = "LOW"
@@ -25,6 +29,7 @@ class SystemCapabilities(BaseModel):
     gpu_name: str | None
     cuda_available: bool
     recommended_profile: ProcessingProfile
+    media_tools: MediaToolsCapabilities | None = None
 
 
 def _detect_nvidia_gpu() -> tuple[bool, str | None]:
@@ -45,7 +50,7 @@ def _detect_nvidia_gpu() -> tuple[bool, str | None]:
         return False, None
 
 
-def get_system_capabilities() -> SystemCapabilities:
+def get_system_capabilities(settings: AppSettings | None = None) -> SystemCapabilities:
     gpu_available, gpu_name = _detect_nvidia_gpu()
     memory_gb = round(psutil.virtual_memory().total / (1024**3), 2)
     cpu_count = os.cpu_count() or 1
@@ -57,6 +62,10 @@ def get_system_capabilities() -> SystemCapabilities:
     else:
         profile = ProcessingProfile.LOW
 
+    media_tools = None
+    if settings is not None:
+        media_tools = MediaToolsService(settings).capabilities()
+
     return SystemCapabilities(
         operating_system=platform.system(),
         cpu_architecture=platform.machine(),
@@ -64,8 +73,7 @@ def get_system_capabilities() -> SystemCapabilities:
         memory_gb=memory_gb,
         gpu_available=gpu_available,
         gpu_name=gpu_name,
-        # Phase 1 deliberately avoids importing torch/CUDA libraries. nvidia-smi
-        # availability is used as the conservative CUDA-capable signal for now.
         cuda_available=gpu_available,
         recommended_profile=profile,
+        media_tools=media_tools,
     )

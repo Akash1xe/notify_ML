@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "notify-ml"
-version = "0.1.0"
-description = "Local-first AI lecture screenshot extraction foundation"
+version = "0.2.0"
+description = "Local-first AI lecture screenshot extraction pipeline"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,6 +14,7 @@ dependencies = [
   "pydantic>=2.10,<3.0",
   "pydantic-settings>=2.7,<3.0",
   "psutil>=6.1,<8.0",
+  "yt-dlp>=2025.1.15",
 ]
 
 [project.optional-dependencies]
@@ -29,3 +30,4 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+asyncio_mode = "auto"

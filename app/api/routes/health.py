@@ -8,7 +8,9 @@ def root(request: Request) -> dict[str, str]:
     return {
         "name": request.app.state.settings.app_name,
         "service": "notify",
+        # Kept for backward compatibility with Phase-1 clients.
         "phase": "1-foundation",
+        "current_phase": "2-ingestion",
     }
 
 

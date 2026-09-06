@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app.core.exceptions import InvalidJobTransitionError, JobCancelledError
+from app.core.exceptions import InvalidJobTransitionError, JobCancelledError, NotifyError
 from app.core.logging import JobEventLogger, log_job
 from app.jobs.models import JobStatus
-from app.jobs.processor import FakeProcessor
+from app.jobs.processor import JobProcessor
 from app.jobs.service import JobService
 
 
@@ -17,7 +17,7 @@ class JobRunner:
     def __init__(
         self,
         service: JobService,
-        processor: FakeProcessor,
+        processor: JobProcessor,
         event_logger: JobEventLogger,
         *,
         max_concurrent_jobs: int,
@@ -62,6 +62,7 @@ class JobRunner:
     async def _worker(self, worker_index: int) -> None:
         while True:
             job_id = await self._queue.get()
+            active = False
             try:
                 if job_id is None:
                     return
@@ -69,21 +70,17 @@ class JobRunner:
                 job = self._service.get_job(job_id)
                 if job.status is not JobStatus.QUEUED:
                     continue
-
                 try:
                     self._service.mark_running(job_id)
                 except InvalidJobTransitionError:
-                    # A cancellation may win the race between reading QUEUED
-                    # and starting it. Skip safely instead of killing a worker.
                     continue
 
                 self._active_count += 1
+                active = True
                 self.max_observed_concurrency = max(
                     self.max_observed_concurrency, self._active_count
                 )
-                self._event_logger.write(
-                    job_id, level="INFO", stage="PREPARING", message="Job started"
-                )
+                self._event_logger.write(job_id, level="INFO", stage="PREPARING", message="Job started")
                 log_job(
                     logger,
                     logging.INFO,
@@ -94,12 +91,7 @@ class JobRunner:
 
                 try:
                     await self._processor.process(job_id)
-                    self._event_logger.write(
-                        job_id,
-                        level="INFO",
-                        stage="COMPLETED",
-                        message="Job completed",
-                    )
+                    self._event_logger.write(job_id, level="INFO", stage="COMPLETED", message="Job completed")
                 except JobCancelledError:
                     self._event_logger.write(
                         job_id,
@@ -107,19 +99,37 @@ class JobRunner:
                         stage="CANCELLED",
                         message="Job cancelled during processing",
                     )
-                except Exception as exc:  # isolate a worker failure to one job
+                except NotifyError as exc:
                     current = self._service.get_job(job_id)
                     if current.status is JobStatus.RUNNING:
                         self._service.mark_failed(
                             job_id,
-                            code="processing_error",
+                            code=exc.code,
                             message=str(exc),
+                            category=getattr(exc, "category", None),
+                            failed_stage=current.stage.value,
                         )
                     self._event_logger.write(
                         job_id,
                         level="ERROR",
                         stage=current.stage.value,
-                        message=str(exc),
+                        message=f"{exc.code}: {exc}",
+                    )
+                except Exception as exc:
+                    current = self._service.get_job(job_id)
+                    if current.status is JobStatus.RUNNING:
+                        self._service.mark_failed(
+                            job_id,
+                            code="processing_error",
+                            message="Unexpected processing failure",
+                            category="INTERNAL",
+                            failed_stage=current.stage.value,
+                        )
+                    self._event_logger.write(
+                        job_id,
+                        level="ERROR",
+                        stage=current.stage.value,
+                        message=str(exc)[:1000],
                     )
                     log_job(
                         logger,
@@ -129,7 +139,7 @@ class JobRunner:
                         stage=current.stage.value,
                         exc_info=True,
                     )
-                finally:
-                    self._active_count -= 1
             finally:
+                if active:
+                    self._active_count -= 1
                 self._queue.task_done()

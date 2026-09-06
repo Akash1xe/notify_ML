@@ -20,3 +20,4 @@ def test_capabilities_endpoint(client: TestClient):
     body = response.json()
     assert "memory_gb" in body
     assert "recommended_profile" in body
+    assert "media_tools" in body

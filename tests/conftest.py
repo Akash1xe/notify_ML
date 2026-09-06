@@ -15,6 +15,7 @@ def settings(tmp_path: Path) -> AppSettings:
     return AppSettings(
         storage_root=tmp_path / "jobs",
         max_concurrent_jobs=2,
+        processor_mode="fake",
         fake_processor_step_delay=0.002,
         log_level="CRITICAL",
     )
@@ -26,7 +27,7 @@ def client(settings: AppSettings):
         yield test_client
 
 
-def wait_for_status(client: TestClient, job_id: str, expected: str, timeout: float = 2.0):
+def wait_for_status(client: TestClient, job_id: str, expected: str, timeout: float = 3.0):
     deadline = time.monotonic() + timeout
     latest = None
     while time.monotonic() < deadline:

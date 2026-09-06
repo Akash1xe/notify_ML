@@ -18,7 +18,9 @@ class JobStage(str, Enum):
     QUEUED = "QUEUED"
     PREPARING = "PREPARING"
     DOWNLOADING = "DOWNLOADING"
+    INSPECTING_MEDIA = "INSPECTING_MEDIA"
     EXTRACTING_AUDIO = "EXTRACTING_AUDIO"
+    INGESTION_COMPLETE = "INGESTION_COMPLETE"
     TRANSCRIBING = "TRANSCRIBING"
     SAMPLING_FRAMES = "SAMPLING_FRAMES"
     DETECTING_CHANGES = "DETECTING_CHANGES"
@@ -37,6 +39,8 @@ class JobStage(str, Enum):
 class JobErrorInfo(BaseModel):
     code: str
     message: str
+    category: str | None = None
+    failed_stage: str | None = None
 
 
 class Job(BaseModel):
