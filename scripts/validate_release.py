@@ -131,8 +131,7 @@ def _write_release_artifacts(
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     report_bytes = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8")
-    report_path = output_dir / "release_report.json"
-    report_path.write_bytes(report_bytes)
+    (output_dir / "release_report.json").write_bytes(report_bytes)
     (output_dir / "release_report.md").write_text(_markdown_report(payload), encoding="utf-8")
     manifest = ReleaseManifest(
         version=APP_VERSION,
@@ -262,14 +261,28 @@ def _add_full_release_gates(
     runner.run_command_gate(
         "stress",
         "Resource stress smoke",
-        [python, "scripts/run_stress_tests.py", "--tier", "ci"],
+        [
+            python,
+            "scripts/run_stress_tests.py",
+            "--tier",
+            "ci",
+            "--output",
+            str(output_dir / "stress.json"),
+        ],
         cwd=root,
         timeout=300,
     )
     runner.run_command_gate(
         "reliability",
         "Reliability smoke",
-        [python, "scripts/run_reliability_tests.py", "--tier", "ci"],
+        [
+            python,
+            "scripts/run_reliability_tests.py",
+            "--tier",
+            "ci",
+            "--output",
+            str(output_dir / "reliability.json"),
+        ],
         cwd=root,
         timeout=300,
     )
