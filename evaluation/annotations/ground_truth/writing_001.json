@@ -1,0 +1,33 @@
+{
+  "version": "1",
+  "sample_id": "writing_001",
+  "annotator": "manual",
+  "annotation_version": "1",
+  "review_status": "LOCKED",
+  "states": [
+    {
+      "state_id": "eq_complete",
+      "target_timestamp_seconds": 12.0,
+      "acceptable_start_seconds": 11.0,
+      "acceptable_end_seconds": 13.5,
+      "content_type": "EQUATION",
+      "importance": "REQUIRED",
+      "completion": "COMPLETE",
+      "meaningful": true,
+      "notes": "Completed equation x² + x = 10"
+    },
+    {
+      "state_id": "eq_optional",
+      "target_timestamp_seconds": 17.0,
+      "acceptable_start_seconds": 16.0,
+      "acceptable_end_seconds": 18.0,
+      "content_type": "EQUATION",
+      "importance": "OPTIONAL",
+      "completion": "COMPLETE",
+      "meaningful": true
+    }
+  ],
+  "negative_states": [
+    {"start_seconds": 4.0, "end_seconds": 8.0, "reason": "INCOMPLETE_WRITING"}
+  ]
+}

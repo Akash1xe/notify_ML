@@ -1,0 +1,36 @@
+{
+  "writing_001": {
+    "CANDIDATE": [
+      {"prediction_id": "c_eq", "timestamp_seconds": 12.1, "content_type": "EQUATION"},
+      {"prediction_id": "c_optional", "timestamp_seconds": 17.2, "content_type": "EQUATION"}
+    ],
+    "SEMANTIC": [
+      {"prediction_id": "s_eq", "timestamp_seconds": 12.1, "content_type": "EQUATION"}
+    ],
+    "FINAL_SCREENSHOT": [
+      {"prediction_id": "f_eq", "timestamp_seconds": 12.0, "content_type": "EQUATION"}
+    ],
+    "DOCUMENT": [
+      {"prediction_id": "d_eq", "timestamp_seconds": 12.0, "content_type": "EQUATION"}
+    ]
+  },
+  "slides_001": {
+    "CANDIDATE": [
+      {"prediction_id": "c_a", "timestamp_seconds": 3.1, "content_type": "SLIDE"},
+      {"prediction_id": "c_a2", "timestamp_seconds": 8.1, "content_type": "SLIDE"},
+      {"prediction_id": "c_b", "timestamp_seconds": 15.1, "content_type": "SLIDE"}
+    ],
+    "SEMANTIC": [
+      {"prediction_id": "s_a", "timestamp_seconds": 3.1, "content_type": "SLIDE"},
+      {"prediction_id": "s_b", "timestamp_seconds": 15.1, "content_type": "SLIDE"}
+    ],
+    "FINAL_SCREENSHOT": [
+      {"prediction_id": "f_a", "timestamp_seconds": 3.0, "content_type": "SLIDE"},
+      {"prediction_id": "f_b", "timestamp_seconds": 15.0, "content_type": "SLIDE"}
+    ],
+    "DOCUMENT": [
+      {"prediction_id": "d_a", "timestamp_seconds": 3.0, "content_type": "SLIDE"},
+      {"prediction_id": "d_b", "timestamp_seconds": 15.0, "content_type": "SLIDE"}
+    ]
+  }
+}

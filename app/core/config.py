@@ -25,7 +25,7 @@ class AppSettings(BaseSettings):
     job_retention_hours: int = Field(default=72, ge=1)
     max_concurrent_jobs: int = Field(default=2, ge=1, le=32)
     log_level: str = "INFO"
-    processor_mode: Literal["document", "full", "screenshots", "semantic", "transcription", "candidates", "analysis", "ingestion", "fake"] = "analysis"
+    processor_mode: Literal["document", "full", "screenshots", "semantic", "transcription", "candidates", "analysis", "ingestion", "fake"] = "document"
 
     # Phase-1 compatibility/testing processor.
     fake_processor_step_delay: float = Field(default=0.15, ge=0.0, le=60.0)

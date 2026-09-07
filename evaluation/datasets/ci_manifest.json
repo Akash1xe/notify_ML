@@ -1,0 +1,33 @@
+{
+  "version": "1",
+  "samples": [
+    {
+      "sample_id": "writing_001",
+      "title": "Incremental equation writing",
+      "source_type": "SYNTHETIC",
+      "source": {},
+      "duration_seconds": 20.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 30.0,
+      "categories": ["WHITEBOARD", "EQUATION"],
+      "tags": ["SLOW_WRITING", "APPEND_ONLY_WRITING", "RESOLUTION_720P"],
+      "annotation_path": "annotations/ground_truth/writing_001.json",
+      "split": "CI"
+    },
+    {
+      "sample_id": "slides_001",
+      "title": "Slide transition and duplicate",
+      "source_type": "SYNTHETIC",
+      "source": {},
+      "duration_seconds": 20.0,
+      "width": 1280,
+      "height": 720,
+      "fps": 30.0,
+      "categories": ["SLIDE"],
+      "tags": ["STATIC_SLIDES", "BLACK_TRANSITION", "RESOLUTION_720P"],
+      "annotation_path": "annotations/ground_truth/slides_001.json",
+      "split": "CI"
+    }
+  ]
+}

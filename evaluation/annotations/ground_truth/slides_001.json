@@ -1,0 +1,44 @@
+{
+  "version": "1",
+  "sample_id": "slides_001",
+  "annotator": "manual",
+  "annotation_version": "1",
+  "review_status": "LOCKED",
+  "states": [
+    {
+      "state_id": "slide_a",
+      "target_timestamp_seconds": 3.0,
+      "acceptable_start_seconds": 2.0,
+      "acceptable_end_seconds": 4.0,
+      "content_type": "SLIDE",
+      "importance": "REQUIRED",
+      "completion": "COMPLETE",
+      "meaningful": true,
+      "duplicate_group": "dup_slide_a"
+    },
+    {
+      "state_id": "slide_a_repeat",
+      "target_timestamp_seconds": 8.0,
+      "acceptable_start_seconds": 7.0,
+      "acceptable_end_seconds": 9.0,
+      "content_type": "SLIDE",
+      "importance": "OPTIONAL",
+      "completion": "COMPLETE",
+      "meaningful": true,
+      "duplicate_group": "dup_slide_a"
+    },
+    {
+      "state_id": "slide_b",
+      "target_timestamp_seconds": 15.0,
+      "acceptable_start_seconds": 14.0,
+      "acceptable_end_seconds": 16.5,
+      "content_type": "SLIDE",
+      "importance": "REQUIRED",
+      "completion": "COMPLETE",
+      "meaningful": true
+    }
+  ],
+  "negative_states": [
+    {"start_seconds": 10.0, "end_seconds": 11.5, "reason": "BLACK_FRAME"}
+  ]
+}

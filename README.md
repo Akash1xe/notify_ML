@@ -1148,3 +1148,24 @@ npm run build
 ```
 
 `PROCESSOR_MODE=document` and `PROCESSOR_MODE=full` run through Phase 8. Earlier modes (`screenshots`, `semantic`, `transcription`, `candidates`, `analysis`, `ingestion`, `fake`) remain available. In full document mode the job reaches 100% only after the complete PDF dependency chain validates and `FINAL_DOCUMENT_READY` is written. Phase 9 remains responsible for broad real-lecture evaluation, performance tuning and production hardening.
+
+
+## Phase 9 — Release Hardening
+
+Notify v1 adds an offline evaluation/quality baseline and guarded calibration layer, performance and resource profiling, stress scenarios, controlled failure/recovery tests, readiness/diagnostic tooling, and a final release-validation runner.
+
+```bash
+python scripts/validate_evaluation_dataset.py
+python scripts/run_benchmark.py --strict
+python scripts/evaluate_quality_baseline.py --strict --lock
+python scripts/run_calibration.py --dry-run
+python scripts/profile_pipeline.py --mode cache-hit
+python scripts/run_stress_tests.py --tier ci
+python scripts/run_reliability_tests.py --tier ci
+python scripts/check_environment.py
+python scripts/validate_release.py --smoke
+```
+
+Detailed methodology lives in `evaluation/README.md`, `evaluation/CALIBRATION.md`, `evaluation/PERFORMANCE.md`, `evaluation/STRESS_TESTING.md`, `evaluation/RELIABILITY.md`, and `docs/`. The CI benchmark uses synthetic/golden fixtures only; real-model and real-lecture measurements remain local hardware/media-dependent validation and are never fabricated.
+
+Phase 9 terminal checkpoint: `NOTIFY_RELEASE_READY`. Release target: `v1.0.0`.

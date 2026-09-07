@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import document, health, jobs, system
+from app.api.routes import diagnostics, document, health, jobs, system
 from app.candidate_analysis.boundaries import StableBoundaryDetector
 from app.candidate_analysis.cache import CandidateAnalysisCacheManager
 from app.candidate_analysis.evaluation import Phase4Evaluator
@@ -78,6 +78,7 @@ from app.document.pipeline import DocumentPipeline
 from app.document.render import DocumentRenderPlanner
 from app.document.repository import DocumentRepository
 from app.document.results import DocumentResultService
+from app.version import APP_VERSION
 
 
 def create_app(settings: AppSettings | None = None) -> FastAPI:
@@ -460,7 +461,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     app = FastAPI(
         title=resolved_settings.app_name,
-        version="0.8.0",
+        version=APP_VERSION,
         lifespan=lifespan,
     )
     app.add_middleware(
@@ -473,6 +474,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     app.include_router(health.router)
     app.include_router(jobs.router)
     app.include_router(document.router)
+    app.include_router(diagnostics.router)
     app.include_router(system.router)
 
     @app.exception_handler(JobNotFoundError)
