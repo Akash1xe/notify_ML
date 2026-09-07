@@ -38,6 +38,7 @@ jobs:
           echo "b3adee97c162dee45d11219803f264b32eafa67365de0768719897ec4aafd826  /tmp/phase8.patch" | sha256sum -c -
           git -C source apply --check /tmp/phase8.patch
           git -C source apply /tmp/phase8.patch
+          sed -i 's/catch(e){if(stopped)return;/catch{if(stopped)return;/' source/frontend/src/hooks/useJobPolling.ts
 
       - name: Set up Python
         uses: actions/setup-python@v5
