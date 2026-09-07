@@ -12,9 +12,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Package repository
         run: |
-          tar --exclude=.git -czf notify_source.tar.gz .
+          tar --exclude=.git -czf /tmp/notify_source.tar.gz .
       - uses: actions/upload-artifact@v4
         with:
           name: notify-source
-          path: notify_source.tar.gz
+          path: /tmp/notify_source.tar.gz
           if-no-files-found: error
