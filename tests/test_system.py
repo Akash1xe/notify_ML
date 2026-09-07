@@ -21,3 +21,17 @@ def test_capabilities_endpoint(client: TestClient):
     assert "memory_gb" in body
     assert "recommended_profile" in body
     assert "media_tools" in body
+
+
+def test_vlm_runtime_endpoint_does_not_load_model(tmp_path):
+    from app.core.config import AppSettings
+    from app.main import create_app
+    from fastapi.testclient import TestClient
+
+    settings = AppSettings(storage_root=tmp_path / "jobs", processor_mode="fake", fake_processor_step_delay=0)
+    with TestClient(create_app(settings)) as client:
+        response = client.get("/api/system/vlm")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["configured_model_tier"] == "4b"
+        assert payload["model_loaded"] is False

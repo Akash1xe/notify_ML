@@ -241,3 +241,60 @@ class TranscriptContextError(TranscriptionError):
 
 class Phase5ValidationError(TranscriptionError):
     code = "phase5_validation_failed"
+
+
+class SemanticAnalysisError(NotifyError):
+    code = "semantic_analysis_failed"
+    category = "SEMANTIC_ANALYSIS"
+
+
+class SemanticInputError(SemanticAnalysisError):
+    code = "semantic_input_failed"
+
+
+class TemporalContextError(SemanticAnalysisError):
+    code = "temporal_context_failed"
+
+
+class VLMRuntimeError(SemanticAnalysisError):
+    code = "vlm_runtime_failed"
+
+
+class VLMDependencyMissingError(VLMRuntimeError):
+    code = "vlm_dependency_missing"
+
+
+class VLMModelLoadError(VLMRuntimeError):
+    code = "vlm_model_load_failed"
+
+
+class VLMModelNotFoundError(VLMModelLoadError):
+    code = "vlm_model_not_found"
+
+
+class VLMUnsupportedConfigurationError(VLMRuntimeError):
+    code = "vlm_unsupported_configuration"
+
+
+class VLMOutOfMemoryError(VLMRuntimeError):
+    code = "vlm_out_of_memory"
+
+
+class VLMInferenceError(VLMRuntimeError):
+    code = "vlm_inference_failed"
+
+
+class VLMImageInputError(VLMRuntimeError):
+    code = "vlm_image_input_error"
+
+
+class VLMCancelledError(JobCancelledError):
+    code = "vlm_cancelled"
+
+
+class SemanticDecisionError(SemanticAnalysisError):
+    code = "semantic_decision_failed"
+
+
+class Phase6ValidationError(SemanticAnalysisError):
+    code = "phase6_validation_failed"

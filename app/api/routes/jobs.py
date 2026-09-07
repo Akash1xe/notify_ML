@@ -15,6 +15,8 @@ from app.api.dependencies import (
     get_workspace,
     get_transcription_repository,
     get_transcript_cache,
+    get_semantic_repository,
+    get_semantic_cache,
 )
 from app.ingestion.models import IngestionResult
 from app.candidate_analysis.cache import CandidateAnalysisCacheManager
@@ -39,6 +41,17 @@ from app.transcription.models import (
     TranscriptionPreparationManifest,
 )
 from app.transcription.repository import TranscriptionRepository
+from app.semantic_analysis.cache import SemanticCacheCoordinator
+from app.semantic_analysis.models import (
+    SemanticCacheSnapshot,
+    SemanticInputRecord,
+    SemanticInputStats,
+    SemanticSelectionStats,
+    SemanticSummary,
+    TemporalContextStats,
+    TemporalVisualContext,
+)
+from app.semantic_analysis.repository import SemanticRepository
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -273,5 +286,95 @@ def get_transcript_cache_state(
     service: JobService = Depends(get_job_service),
     cache: TranscriptCacheCoordinator = Depends(get_transcript_cache),
 ) -> TranscriptCacheSnapshot:
+    service.get_job(job_id)
+    return cache.inspect(job_id)
+
+
+@router.get("/{job_id}/semantic/input", response_model=SemanticInputStats)
+def get_semantic_input_summary(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: SemanticRepository = Depends(get_semantic_repository),
+) -> SemanticInputStats:
+    service.get_job(job_id)
+    try:
+        return repository.load_input_manifest(job_id).stats
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Semantic input is not available yet") from exc
+
+
+@router.get("/{job_id}/semantic/input/{candidate_id}", response_model=SemanticInputRecord)
+def get_semantic_input_detail(
+    job_id: str,
+    candidate_id: int,
+    service: JobService = Depends(get_job_service),
+    repository: SemanticRepository = Depends(get_semantic_repository),
+) -> SemanticInputRecord:
+    service.get_job(job_id)
+    try:
+        return repository.get_semantic_input(job_id, candidate_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Semantic candidate input is not available") from exc
+
+
+@router.get("/{job_id}/semantic/context", response_model=TemporalContextStats)
+def get_semantic_context_summary(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: SemanticRepository = Depends(get_semantic_repository),
+) -> TemporalContextStats:
+    service.get_job(job_id)
+    try:
+        return repository.load_temporal_contexts(job_id).stats
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Temporal visual context is not available yet") from exc
+
+
+@router.get("/{job_id}/semantic/context/{candidate_id}", response_model=TemporalVisualContext)
+def get_semantic_context_detail(
+    job_id: str,
+    candidate_id: int,
+    service: JobService = Depends(get_job_service),
+    repository: SemanticRepository = Depends(get_semantic_repository),
+) -> TemporalVisualContext:
+    service.get_job(job_id)
+    try:
+        return repository.get_temporal_context(job_id, candidate_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Temporal visual context is not available") from exc
+
+
+@router.get("/{job_id}/semantic/selections", response_model=SemanticSelectionStats)
+def get_semantic_selections_summary(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: SemanticRepository = Depends(get_semantic_repository),
+) -> SemanticSelectionStats:
+    service.get_job(job_id)
+    try:
+        return repository.load_selections(job_id).stats
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Semantic selections are not available yet") from exc
+
+
+@router.get("/{job_id}/semantic/summary", response_model=SemanticSummary)
+def get_semantic_summary(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: SemanticRepository = Depends(get_semantic_repository),
+) -> SemanticSummary:
+    service.get_job(job_id)
+    try:
+        return repository.load_summary(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Semantic summary is not available yet") from exc
+
+
+@router.get("/{job_id}/semantic/cache", response_model=SemanticCacheSnapshot)
+def get_semantic_cache_state(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    cache: SemanticCacheCoordinator = Depends(get_semantic_cache),
+) -> SemanticCacheSnapshot:
     service.get_job(job_id)
     return cache.inspect(job_id)

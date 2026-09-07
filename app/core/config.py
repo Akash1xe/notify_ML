@@ -25,7 +25,7 @@ class AppSettings(BaseSettings):
     job_retention_hours: int = Field(default=72, ge=1)
     max_concurrent_jobs: int = Field(default=2, ge=1, le=32)
     log_level: str = "INFO"
-    processor_mode: Literal["transcription", "candidates", "analysis", "ingestion", "fake"] = "analysis"
+    processor_mode: Literal["semantic", "transcription", "candidates", "analysis", "ingestion", "fake"] = "analysis"
 
     # Phase-1 compatibility/testing processor.
     fake_processor_step_delay: float = Field(default=0.15, ge=0.0, le=60.0)
@@ -204,6 +204,61 @@ class AppSettings(BaseSettings):
     phase5_low_speech_coverage_ratio: float = Field(default=0.05, ge=0.0, le=1.0)
     phase5_high_empty_context_ratio: float = Field(default=0.50, ge=0.0, le=1.0)
 
+    # Phase 6.1 - semantic input preparation.
+    semantic_input_max_context_characters: int = Field(default=5000, ge=100, le=50000)
+
+    # Phase 6.2 - local Qwen3-VL runtime.
+    qwen_vl_model_tier: Literal["2b", "4b", "8b"] = "4b"
+    qwen_vl_model_name: str = ""
+    qwen_vl_fallback_model_tier: Literal["2b", "4b", "8b"] = "2b"
+    qwen_vl_enable_fallback: bool = True
+    qwen_vl_device: Literal["auto", "cpu", "cuda"] = "auto"
+    qwen_vl_dtype: Literal["auto", "float32", "float16", "bfloat16"] = "auto"
+    qwen_vl_quantization: Literal["none", "4bit", "8bit"] = "none"
+    qwen_vl_model_cache_dir: Path | None = None
+    qwen_vl_local_files_only: bool = False
+    qwen_vl_model_revision: str | None = None
+    qwen_vl_max_new_tokens: int = Field(default=512, ge=32, le=4096)
+    qwen_vl_max_images_per_request: int = Field(default=3, ge=1, le=8)
+    qwen_vl_max_image_long_edge: int = Field(default=1280, ge=256, le=4096)
+    qwen_vl_min_cuda_memory_gb_2b: float = Field(default=4.0, ge=0.0, le=128.0)
+    qwen_vl_min_cuda_memory_gb_4b: float = Field(default=8.0, ge=0.0, le=128.0)
+    qwen_vl_min_cuda_memory_gb_8b: float = Field(default=16.0, ge=0.0, le=256.0)
+    max_concurrent_vlm_inferences: int = Field(default=1, ge=1, le=8)
+
+    # Phase 6.3 - temporal visual context.
+    temporal_context_previous_max_seconds: float = Field(default=12.0, ge=0.0, le=120.0)
+    temporal_context_next_max_seconds: float = Field(default=12.0, ge=0.0, le=120.0)
+    temporal_context_min_frame_gap_seconds: float = Field(default=1.5, ge=0.0, le=30.0)
+    temporal_context_preferred_frame_gap_seconds: float = Field(default=3.0, ge=0.0, le=60.0)
+    temporal_context_min_visual_difference: float = Field(default=0.03, ge=0.0, le=1.0)
+    temporal_context_duplicate_difference_threshold: float = Field(default=0.015, ge=0.0, le=1.0)
+
+    # Phase 6.4 - structured semantic analysis.
+    semantic_prompt_max_characters: int = Field(default=10000, ge=1000, le=50000)
+    semantic_invalid_output_retries: int = Field(default=1, ge=0, le=3)
+    semantic_failed_result_retry_on_resume: bool = True
+
+    # Phase 6.5 - deterministic semantic decisions.
+    semantic_decision_completion_weight: float = Field(default=0.28, ge=0.0, le=1.0)
+    semantic_decision_usefulness_weight: float = Field(default=0.24, ge=0.0, le=1.0)
+    semantic_decision_settled_weight: float = Field(default=0.16, ge=0.0, le=1.0)
+    semantic_decision_confidence_weight: float = Field(default=0.12, ge=0.0, le=1.0)
+    semantic_decision_transcript_weight: float = Field(default=0.08, ge=0.0, le=1.0)
+    semantic_decision_phase4_weight: float = Field(default=0.12, ge=0.0, le=1.0)
+    min_semantic_decision_score: float = Field(default=0.55, ge=0.0, le=1.0)
+    min_semantic_confidence: float = Field(default=0.35, ge=0.0, le=1.0)
+    semantic_alternate_switch_margin: float = Field(default=0.05, ge=0.0, le=1.0)
+    semantic_primary_tie_bonus: float = Field(default=0.01, ge=0.0, le=0.2)
+    semantic_decision_ambiguity_gap: float = Field(default=0.04, ge=0.0, le=1.0)
+    semantic_transition_reject_threshold: float = Field(default=0.70, ge=0.0, le=1.0)
+
+    # Phase 6.7 diagnostic thresholds only.
+    phase6_high_rejection_ratio: float = Field(default=0.80, ge=0.0, le=1.0)
+    phase6_low_rejection_ratio: float = Field(default=0.02, ge=0.0, le=1.0)
+    phase6_high_fallback_ratio: float = Field(default=0.30, ge=0.0, le=1.0)
+    phase6_high_current_only_ratio: float = Field(default=0.60, ge=0.0, le=1.0)
+
     # Phase-4.7 diagnostics only; these values never auto-tune production logic.
     phase4_high_primary_density_per_minute: float = Field(default=4.0, gt=0.0)
     phase4_high_ambiguity_ratio: float = Field(default=0.80, ge=0.0, le=1.0)
@@ -218,7 +273,7 @@ class AppSettings(BaseSettings):
             raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}")
         return normalized
 
-    @field_validator("ffmpeg_path", "ffprobe_path", "whisper_model_cache_dir", mode="before")
+    @field_validator("ffmpeg_path", "ffprobe_path", "whisper_model_cache_dir", "qwen_vl_model_cache_dir", mode="before")
     @classmethod
     def empty_tool_path_is_none(cls, value):
         if value is None or (isinstance(value, str) and not value.strip()):
@@ -289,6 +344,20 @@ class AppSettings(BaseSettings):
                 raise ValueError(f"At least one {name} weight must be > 0")
         if self.transcription_chunk_overlap_seconds >= self.transcription_chunk_seconds:
             raise ValueError("TRANSCRIPTION_CHUNK_OVERLAP_SECONDS must be smaller than TRANSCRIPTION_CHUNK_SECONDS")
+        if self.temporal_context_preferred_frame_gap_seconds < self.temporal_context_min_frame_gap_seconds:
+            raise ValueError("TEMPORAL_CONTEXT_PREFERRED_FRAME_GAP_SECONDS must be >= minimum frame gap")
+        semantic_weights = (
+            self.semantic_decision_completion_weight,
+            self.semantic_decision_usefulness_weight,
+            self.semantic_decision_settled_weight,
+            self.semantic_decision_confidence_weight,
+            self.semantic_decision_transcript_weight,
+            self.semantic_decision_phase4_weight,
+        )
+        if abs(sum(semantic_weights) - 1.0) > 1e-6:
+            raise ValueError("Semantic decision weights must sum to 1.0")
+        if self.qwen_vl_quantization != "none" and self.qwen_vl_device == "cpu":
+            raise ValueError("QWEN_VL_QUANTIZATION requires CUDA/auto device; CPU quantization is not supported here")
         if not self.whisper_model_size.strip():
             raise ValueError("WHISPER_MODEL_SIZE must not be empty")
         if not self.whisper_compute_type.strip():

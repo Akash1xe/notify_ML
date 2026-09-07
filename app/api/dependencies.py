@@ -73,3 +73,23 @@ def get_transcript_cache(request: Request):
 
 def get_phase5_evaluator(request: Request):
     return request.app.state.phase5_evaluator
+
+
+def get_semantic_repository(request: Request):
+    return request.app.state.semantic_repository
+
+
+def get_semantic_cache(request: Request):
+    return request.app.state.semantic_cache
+
+
+def get_semantic_pipeline(request: Request):
+    return request.app.state.semantic_pipeline
+
+
+def get_vlm_runtime(request: Request):
+    return request.app.state.vlm_runtime
+
+
+def get_phase6_evaluator(request: Request):
+    return request.app.state.phase6_evaluator

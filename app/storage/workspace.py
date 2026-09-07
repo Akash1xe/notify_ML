@@ -19,6 +19,7 @@ WORKSPACE_DIRS = (
     "candidates",
     "screenshots",
     "transcript",
+    "semantic",
     "decisions",
     "output",
     "logs",
@@ -213,6 +214,35 @@ class WorkspaceManager:
 
     def transcript_temp_audio_dir(self, job_id: str) -> Path:
         return self.transcript_dir(job_id) / "chunks.tmp"
+
+    def semantic_dir(self, job_id: str) -> Path:
+        return self.workspace(job_id) / "semantic"
+
+    def semantic_input_manifest_path(self, job_id: str) -> Path:
+        return self.semantic_dir(job_id) / "input_manifest.json"
+
+    def semantic_temporal_contexts_path(self, job_id: str) -> Path:
+        return self.semantic_dir(job_id) / "temporal_contexts.json"
+
+    def semantic_raw_results_dir(self, job_id: str) -> Path:
+        return self.semantic_dir(job_id) / "raw_model_results"
+
+    def semantic_candidate_result_path(self, job_id: str, candidate_id: int) -> Path:
+        if candidate_id < 1:
+            raise StorageError("Invalid semantic candidate id")
+        return self.semantic_raw_results_dir(job_id) / f"candidate_{candidate_id:06d}.json"
+
+    def semantic_results_path(self, job_id: str) -> Path:
+        return self.semantic_dir(job_id) / "semantic_results.json"
+
+    def semantic_selections_path(self, job_id: str) -> Path:
+        return self.semantic_dir(job_id) / "selections.json"
+
+    def semantic_summary_path(self, job_id: str) -> Path:
+        return self.semantic_dir(job_id) / "summary.json"
+
+    def semantic_evaluation_path(self, job_id: str) -> Path:
+        return self.semantic_dir(job_id) / "evaluation.json"
 
     def decisions_dir(self, job_id: str) -> Path:
         return self.workspace(job_id) / "decisions"

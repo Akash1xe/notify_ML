@@ -50,6 +50,16 @@ from app.transcription.normalization import TranscriptNormalizationService
 from app.transcription.pipeline import TranscriptionPipeline
 from app.transcription.preparation import AudioPreparationService
 from app.transcription.repository import TranscriptionRepository
+from app.semantic_analysis.analysis import SemanticCandidateAnalyzer
+from app.semantic_analysis.cache import SemanticCacheCoordinator
+from app.semantic_analysis.decision import SemanticDecisionEngine
+from app.semantic_analysis.evaluation import Phase6Evaluator
+from app.semantic_analysis.pipeline import SemanticPipeline
+from app.semantic_analysis.preparation import SemanticInputPreparationService
+from app.semantic_analysis.prompts import SemanticPromptBuilder
+from app.semantic_analysis.repository import SemanticRepository
+from app.semantic_analysis.runtime import QwenRuntimeManager
+from app.semantic_analysis.temporal_context import TemporalVisualContextService
 
 
 def create_app(settings: AppSettings | None = None) -> FastAPI:
@@ -168,6 +178,65 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         phase5_evaluator = Phase5Evaluator(
             resolved_settings, workspace, transcription_repository
         )
+
+        semantic_repository = SemanticRepository(workspace)
+        semantic_preparation = SemanticInputPreparationService(
+            resolved_settings,
+            workspace,
+            checkpoints,
+            semantic_repository,
+            candidate_repository,
+            transcription_repository,
+            analysis_repository,
+        )
+        vlm_runtime = QwenRuntimeManager(resolved_settings)
+        semantic_prompt_builder = SemanticPromptBuilder(resolved_settings)
+        temporal_context = TemporalVisualContextService(
+            resolved_settings,
+            workspace,
+            checkpoints,
+            semantic_repository,
+            analysis_repository,
+            candidate_repository,
+        )
+        semantic_analyzer = SemanticCandidateAnalyzer(
+            resolved_settings,
+            workspace,
+            checkpoints,
+            semantic_repository,
+            vlm_runtime,
+            semantic_prompt_builder,
+        )
+        semantic_decision = SemanticDecisionEngine(
+            resolved_settings,
+            checkpoints,
+            semantic_repository,
+            candidate_repository,
+        )
+        semantic_cache = SemanticCacheCoordinator(
+            workspace,
+            checkpoints,
+            semantic_repository,
+            candidate_repository,
+            transcription_repository,
+            analysis_repository,
+            semantic_preparation,
+            temporal_context,
+            semantic_analyzer,
+            semantic_decision,
+        )
+        semantic_pipeline = SemanticPipeline(
+            jobs=service,
+            checkpoints=checkpoints,
+            events=event_logger,
+            preparation=semantic_preparation,
+            temporal_context=temporal_context,
+            analyzer=semantic_analyzer,
+            decision=semantic_decision,
+            cache=semantic_cache,
+            repository=semantic_repository,
+        )
+        phase6_evaluator = Phase6Evaluator(resolved_settings, semantic_repository)
         phase3_pipeline = NotifyPipeline(
             ingestion=ingestion,
             frame_analysis=frame_analysis,
@@ -189,6 +258,15 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             candidate_analysis=candidate_analysis,
             transcription=transcription_pipeline,
         )
+        semantic_full_pipeline = NotifyPipeline(
+            ingestion=ingestion,
+            frame_analysis=frame_analysis,
+            ingestion_cache=ingestion_cache,
+            jobs=service,
+            candidate_analysis=candidate_analysis,
+            transcription=transcription_pipeline,
+            semantic=semantic_pipeline,
+        )
 
         if resolved_settings.processor_mode == "fake":
             processor = FakeProcessor(service, checkpoints, resolved_settings)
@@ -198,8 +276,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             processor = phase3_pipeline
         elif resolved_settings.processor_mode == "candidates":
             processor = full_pipeline
-        else:
+        elif resolved_settings.processor_mode == "transcription":
             processor = transcription_full_pipeline
+        else:
+            processor = semantic_full_pipeline
 
         runner = JobRunner(
             service,
@@ -237,7 +317,21 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         app.state.transcript_cache = transcript_cache
         app.state.transcription_pipeline = transcription_pipeline
         app.state.phase5_evaluator = phase5_evaluator
-        app.state.notify_pipeline = transcription_full_pipeline if resolved_settings.processor_mode == "transcription" else full_pipeline
+        app.state.semantic_repository = semantic_repository
+        app.state.semantic_input_preparation = semantic_preparation
+        app.state.vlm_runtime = vlm_runtime
+        app.state.temporal_visual_context_service = temporal_context
+        app.state.semantic_analyzer = semantic_analyzer
+        app.state.semantic_decision_engine = semantic_decision
+        app.state.semantic_cache = semantic_cache
+        app.state.semantic_pipeline = semantic_pipeline
+        app.state.phase6_evaluator = phase6_evaluator
+        if resolved_settings.processor_mode == "semantic":
+            app.state.notify_pipeline = semantic_full_pipeline
+        elif resolved_settings.processor_mode == "transcription":
+            app.state.notify_pipeline = transcription_full_pipeline
+        else:
+            app.state.notify_pipeline = full_pipeline
         app.state.cleanup_manager = cleanup
 
         await runner.start()
@@ -249,7 +343,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     app = FastAPI(
         title=resolved_settings.app_name,
-        version="0.5.0",
+        version="0.6.0",
         lifespan=lifespan,
     )
     app.include_router(health.router)

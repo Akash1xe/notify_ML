@@ -3,9 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from app.api.dependencies import get_cleanup_manager
+from app.api.dependencies import get_cleanup_manager, get_vlm_runtime
 from app.ingestion.cache import CleanupManager, CleanupResult
 from app.system.hardware import SystemCapabilities, get_system_capabilities
+from app.semantic_analysis.models import VLMRuntimeMetadata
+from app.semantic_analysis.runtime import QwenRuntimeManager
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -25,3 +27,8 @@ def cleanup(
     manager: CleanupManager = Depends(get_cleanup_manager),
 ) -> CleanupResult:
     return manager.cleanup(dry_run=payload.dry_run)
+
+
+@router.get("/vlm", response_model=VLMRuntimeMetadata)
+def vlm_runtime(runtime: QwenRuntimeManager = Depends(get_vlm_runtime)) -> VLMRuntimeMetadata:
+    return runtime.inspect_runtime()

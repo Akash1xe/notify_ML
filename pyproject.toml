@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "notify-ml"
-version = "0.5.0"
+version = "0.6.0"
 description = "Local-first AI lecture screenshot extraction pipeline"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,9 +19,15 @@ dependencies = [
   "opencv-python-headless>=4.10,<5.0",
   "scikit-image>=0.24,<1.0",
   "faster-whisper>=1.1,<2.0",
+  "Pillow>=11,<13",
 ]
 
 [project.optional-dependencies]
+vlm = [
+  "torch>=2.4",
+  "transformers>=4.57",
+  "accelerate>=1.0",
+]
 dev = [
   "httpx>=0.28,<1.0",
   "pytest>=8.3,<10.0",

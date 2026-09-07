@@ -2,9 +2,9 @@
 
 Notify is a **local-first lecture processing application**. The long-term product accepts a YouTube lecture, identifies completed teaching states such as slides, boards, diagrams, and code, selects useful screenshots with a local vision-language model, removes duplicates, and generates a PDF.
 
-**Phase 4 is complete.** Notify can now ingest a lecture, build a timestamped visual activity timeline, detect sustained stable windows and settle boundaries, generate a bounded set of representative frame candidates, score them with explainable classical heuristics, and select PRIMARY/ALTERNATE candidates with restart-safe dependency-aware caching.
+**Phase 6 is complete.** Notify can ingest a lecture, build visual candidates, transcribe locally with faster-whisper, align speech to candidate timestamps, construct compact temporal visual context, analyze candidates through a local Qwen3-VL runtime, and deterministically select semantically useful completed visual states with candidate-level cache/recovery.
 
-No paid API, cloud vision service, OCR, Whisper, Qwen, final high-resolution screenshot extraction, or PDF generation is used through Phase 4.
+No paid API or cloud vision/speech service is required. Qwen model weights are downloaded only on explicit uncached semantic inference (unless local-files-only mode is enabled); automated tests use fake STT/VLM adapters and never download model weights.
 
 ## Current pipeline
 
@@ -53,7 +53,7 @@ Phase 4 - CandidateAnalysisPipeline
 CANDIDATES_READY
 ```
 
-`PROCESSOR_MODE=candidates` runs Phase 2, Phase 3, and Phase 4 as one job. `PROCESSOR_MODE=analysis` remains the Phase-3-only compatibility mode, `PROCESSOR_MODE=ingestion` retains Phase-2-only behavior, and `PROCESSOR_MODE=fake` is retained for deterministic foundation tests. The provided `.env.example` selects `candidates`.
+`PROCESSOR_MODE=semantic` runs Phases 2–6. `PROCESSOR_MODE=transcription` stops after Phase 5, `candidates` stops after Phase 4, `analysis` after Phase 3, `ingestion` after Phase 2, and `fake` remains available for deterministic foundation tests. The `.env.example` keeps the existing transcription default unless you explicitly select semantic mode.
 
 ## Workspace contract
 
@@ -744,10 +744,6 @@ Later transcription/VLM stages can consume a compact handoff containing PRIMARY/
 
 Not implemented yet:
 
-- faster-whisper transcription
-- transcript/frame alignment
-- Qwen3-VL semantic judging
-- semantic “writing/slide/code/diagram complete” classification
 - exact high-quality screenshot extraction from source video
 - final cross-window visual deduplication
 - PDF generation
@@ -833,3 +829,102 @@ Useful Phase-5 API endpoints include:
 - `GET /api/jobs/{job_id}/transcript/cache` — compact cache/resume state.
 
 `TRANSCRIPT_CONTEXT_READY` means visual candidates now have deterministic transcript context suitable for Phase 6. It does **not** mean the transcript is semantically perfect, the visual is approved, or a final PDF screenshot has been selected. Phase 6 remains responsible for Qwen3-VL semantic reasoning.
+
+
+## Phase 6 — Local semantic visual analysis
+
+Phase 6 consumes `TRANSCRIPT_CONTEXT_READY` and reduces the retained PRIMARY/ALTERNATE candidate set to semantically preferred completed teaching states. It deliberately keeps model inference candidate-scoped rather than sending the lecture or all frames to a VLM.
+
+```text
+TRANSCRIPT_CONTEXT_READY
+        ↓
+6.1 compact semantic input
+        ↓
+6.3 PREVIOUS / CURRENT / NEXT visual context
+        ↓
+6.4 Qwen3-VL structured semantic analysis
+        ↓
+6.5 deterministic completion/usefulness decision engine
+        ↓
+6.6 candidate-level cache + restart recovery
+        ↓
+6.7 final validation + evaluation
+        ↓
+SEMANTIC_CANDIDATES_READY
+```
+
+### Qwen runtime
+
+The verified model tier mapping is:
+
+```text
+2b → Qwen/Qwen3-VL-2B-Instruct
+4b → Qwen/Qwen3-VL-4B-Instruct   # default
+8b → Qwen/Qwen3-VL-8B-Instruct
+```
+
+The runtime is lazy: application startup, Phase 1–5 processing, semantic cache inspection, and summary APIs do not load model weights. `QWEN_VL_DEVICE=auto` uses CUDA only when hardware/memory policy allows it and otherwise resolves to CPU. Dtype, revision, local-files-only behavior, image count/size limits and optional CUDA quantization are explicit configuration. The 2B model can be used as a bounded resource fallback when the primary 4B runtime hits an out-of-memory condition. Per-candidate artifacts retain the actual resolved model/fallback metadata.
+
+Install heavy VLM dependencies only when real local Qwen inference is required:
+
+```bash
+pip install -e ".[vlm]"
+```
+
+Inspect runtime/hardware configuration without loading the model:
+
+```bash
+python scripts/smoke_qwen_runtime.py
+```
+
+Explicit model loading is opt-in:
+
+```bash
+python scripts/smoke_qwen_runtime.py --load-model
+```
+
+### Semantic workspace contract
+
+```text
+semantic/
+├── input_manifest.json
+├── temporal_contexts.json
+├── raw_model_results/
+│   ├── candidate_000042.json
+│   └── ...
+├── semantic_results.json
+├── selections.json
+├── summary.json
+└── evaluation.json        # optional diagnostics
+```
+
+`input_manifest.json` joins Phase-4 retained candidate identity/frame metadata with Phase-5 transcript context without copying all prior diagnostics. `temporal_contexts.json` keeps CURRENT immutable while selecting at most one bounded meaningful PREVIOUS and NEXT processed frame, excluding invalid/black/near-duplicate frames. The VLM prompt explicitly labels image roles, includes only BEFORE/CURRENT/AFTER transcript context, requests JSON-only structured judgments, and never asks for chain-of-thought.
+
+Semantic inference is persisted per candidate. A crash after candidate 20 can reuse candidates 1–20; a missing `semantic_results.json` is rebuilt from valid candidate artifacts without Qwen; a decision-weight change reruns only the deterministic decision engine. Prompt/model/runtime changes invalidate 6.4+, temporal-context changes invalidate affected candidates, while Phase-4 ranking-only or decision-weight changes preserve VLM inference.
+
+### Phase-6 APIs
+
+```text
+GET /api/system/vlm
+GET /api/jobs/{job_id}/semantic/input
+GET /api/jobs/{job_id}/semantic/input/{candidate_id}
+GET /api/jobs/{job_id}/semantic/context
+GET /api/jobs/{job_id}/semantic/context/{candidate_id}
+GET /api/jobs/{job_id}/semantic/selections
+GET /api/jobs/{job_id}/semantic/summary
+GET /api/jobs/{job_id}/semantic/cache
+```
+
+`GET /api/system/vlm` reports runtime/hardware configuration without downloading or loading Qwen. Job summary/cache endpoints do not return raw prompts or model responses.
+
+Evaluate an existing Phase-6 workspace without running Qwen:
+
+```bash
+python scripts/evaluate_phase6.py storage/jobs/<job-id>
+```
+
+The evaluator reports temporal-context shape, content/completion/usefulness distributions, PRIMARY-vs-ALTERNATE outcomes, fallback/model use, inference latency, semantic selectivity and diagnostic warnings. It never auto-tunes the prompt, model, temporal windows or decision thresholds.
+
+### Phase-7 handoff
+
+`SEMANTIC_CANDIDATES_READY` exposes a compact selected-candidate handoff containing exact candidate timestamp, analysis frame reference, stable-window provenance, content type, completion/usefulness labels and deterministic semantic decision score. Phase 7 must use the exact timestamp to extract a clean high-resolution frame from `source/video.*`, then perform cross-window visual deduplication. Phase 6 does **not** extract final screenshots, deduplicate across windows, or generate a PDF.
