@@ -22,6 +22,20 @@ jobs:
         run: pytest
       - name: Compile Python sources
         run: python -m compileall -q app scripts tests
+      - name: Validate evaluation dataset
+        run: python scripts/validate_evaluation_dataset.py
+      - name: Run benchmark smoke
+        run: python scripts/run_benchmark.py --strict
+      - name: Run quality baseline smoke
+        run: python scripts/evaluate_quality_baseline.py --strict --output /tmp/notify-baseline.json
+      - name: Run calibration dry run
+        run: python scripts/run_calibration.py --dry-run > /tmp/notify-calibration.json
+      - name: Run performance smoke
+        run: python scripts/profile_pipeline.py --mode cache-hit --output /tmp/notify-performance.json > /tmp/notify-performance.log
+      - name: Run stress smoke
+        run: python scripts/run_stress_tests.py --tier ci > /tmp/notify-stress.json
+      - name: Run reliability smoke
+        run: python scripts/run_reliability_tests.py --tier ci > /tmp/notify-reliability.json
 
   frontend:
     runs-on: ubuntu-latest
@@ -36,7 +50,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
