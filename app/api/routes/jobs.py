@@ -17,6 +17,8 @@ from app.api.dependencies import (
     get_transcript_cache,
     get_semantic_repository,
     get_semantic_cache,
+    get_screenshot_repository,
+    get_phase7_cache,
 )
 from app.ingestion.models import IngestionResult
 from app.candidate_analysis.cache import CandidateAnalysisCacheManager
@@ -52,6 +54,15 @@ from app.semantic_analysis.models import (
     TemporalVisualContext,
 )
 from app.semantic_analysis.repository import SemanticRepository
+from app.screenshots.cache import Phase7CacheCoordinator
+from app.screenshots.models import (
+    DuplicateGroupStats,
+    FinalSelectionsManifest,
+    Phase7CacheSnapshot,
+    Phase7Summary,
+    QualityStats,
+)
+from app.screenshots.repository import ScreenshotRepository
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -376,5 +387,67 @@ def get_semantic_cache_state(
     service: JobService = Depends(get_job_service),
     cache: SemanticCacheCoordinator = Depends(get_semantic_cache),
 ) -> SemanticCacheSnapshot:
+    service.get_job(job_id)
+    return cache.inspect(job_id)
+
+
+@router.get("/{job_id}/screenshots/quality", response_model=QualityStats)
+def get_screenshot_quality_summary(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: ScreenshotRepository = Depends(get_screenshot_repository),
+) -> QualityStats:
+    service.get_job(job_id)
+    try:
+        return repository.load_quality_manifest(job_id).stats
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Screenshot quality results are not available yet") from exc
+
+
+@router.get("/{job_id}/screenshots/duplicates", response_model=DuplicateGroupStats)
+def get_screenshot_duplicate_summary(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: ScreenshotRepository = Depends(get_screenshot_repository),
+) -> DuplicateGroupStats:
+    service.get_job(job_id)
+    try:
+        return repository.load_duplicate_groups(job_id).stats
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Duplicate screenshot groups are not available yet") from exc
+
+
+@router.get("/{job_id}/screenshots/final", response_model=FinalSelectionsManifest)
+def get_final_screenshots(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: ScreenshotRepository = Depends(get_screenshot_repository),
+) -> FinalSelectionsManifest:
+    service.get_job(job_id)
+    try:
+        return repository.load_final_selections(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Final screenshots are not available yet") from exc
+
+
+@router.get("/{job_id}/screenshots/summary", response_model=Phase7Summary)
+def get_screenshot_summary(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    repository: ScreenshotRepository = Depends(get_screenshot_repository),
+) -> Phase7Summary:
+    service.get_job(job_id)
+    try:
+        return repository.load_summary(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Screenshot summary is not available yet") from exc
+
+
+@router.get("/{job_id}/screenshots/cache", response_model=Phase7CacheSnapshot)
+def get_screenshot_cache_state(
+    job_id: str,
+    service: JobService = Depends(get_job_service),
+    cache: Phase7CacheCoordinator = Depends(get_phase7_cache),
+) -> Phase7CacheSnapshot:
     service.get_job(job_id)
     return cache.inspect(job_id)

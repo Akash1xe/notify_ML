@@ -244,6 +244,82 @@ class WorkspaceManager:
     def semantic_evaluation_path(self, job_id: str) -> Path:
         return self.semantic_dir(job_id) / "evaluation.json"
 
+    def screenshot_extracted_dir(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "extracted"
+
+    def screenshot_extraction_records_dir(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "extraction_records"
+
+    def screenshot_extraction_record_path(self, job_id: str, candidate_id: int) -> Path:
+        if candidate_id < 1:
+            raise StorageError("Invalid screenshot candidate id")
+        return self.screenshot_extraction_records_dir(job_id) / f"candidate_{candidate_id:06d}.json"
+
+    def screenshot_extraction_path(self, job_id: str, candidate_id: int, suffix: str = ".png") -> Path:
+        if candidate_id < 1:
+            raise StorageError("Invalid screenshot candidate id")
+        return self.screenshot_extracted_dir(job_id) / f"candidate_{candidate_id:06d}{suffix}"
+
+    def screenshot_extraction_manifest_path(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "extraction_manifest.json"
+
+    def screenshot_quality_candidates_dir(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "quality_candidates"
+
+    def screenshot_quality_selected_dir(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "quality_selected"
+
+    def screenshot_quality_records_dir(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "quality_records"
+
+    def screenshot_quality_record_path(self, job_id: str, candidate_id: int) -> Path:
+        if candidate_id < 1:
+            raise StorageError("Invalid screenshot candidate id")
+        return self.screenshot_quality_records_dir(job_id) / f"candidate_{candidate_id:06d}.json"
+
+    def screenshot_quality_selected_path(self, job_id: str, candidate_id: int) -> Path:
+        if candidate_id < 1:
+            raise StorageError("Invalid screenshot candidate id")
+        return self.screenshot_quality_selected_dir(job_id) / f"candidate_{candidate_id:06d}.png"
+
+    def screenshot_quality_manifest_path(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "quality_manifest.json"
+
+    def screenshot_fingerprints_dir(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "fingerprints"
+
+    def screenshot_fingerprint_records_dir(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "fingerprint_records"
+
+    def screenshot_fingerprint_record_path(self, job_id: str, candidate_id: int) -> Path:
+        if candidate_id < 1:
+            raise StorageError("Invalid screenshot candidate id")
+        return self.screenshot_fingerprint_records_dir(job_id) / f"candidate_{candidate_id:06d}.json"
+
+    def screenshot_gray_thumbnail_path(self, job_id: str, candidate_id: int) -> Path:
+        return self.screenshot_fingerprints_dir(job_id) / f"candidate_{candidate_id:06d}_gray.png"
+
+    def screenshot_edge_map_path(self, job_id: str, candidate_id: int) -> Path:
+        return self.screenshot_fingerprints_dir(job_id) / f"candidate_{candidate_id:06d}_edges.png"
+
+    def screenshot_fingerprint_manifest_path(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "fingerprint_manifest.json"
+
+    def screenshot_duplicate_pairs_path(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "duplicate_pairs.json"
+
+    def screenshot_duplicate_groups_path(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "duplicate_groups.json"
+
+    def screenshot_final_selections_path(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "final_selections.json"
+
+    def screenshot_summary_path(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "summary.json"
+
+    def screenshot_evaluation_path(self, job_id: str) -> Path:
+        return self.screenshots_dir(job_id) / "evaluation.json"
+
     def decisions_dir(self, job_id: str) -> Path:
         return self.workspace(job_id) / "decisions"
 

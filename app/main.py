@@ -60,6 +60,15 @@ from app.semantic_analysis.prompts import SemanticPromptBuilder
 from app.semantic_analysis.repository import SemanticRepository
 from app.semantic_analysis.runtime import QwenRuntimeManager
 from app.semantic_analysis.temporal_context import TemporalVisualContextService
+from app.screenshots.cache import Phase7CacheCoordinator
+from app.screenshots.duplicates import CrossWindowDuplicateDetector
+from app.screenshots.evaluation import Phase7Evaluator
+from app.screenshots.extraction import SourceScreenshotExtractor
+from app.screenshots.fingerprints import VisualFingerprintGenerator
+from app.screenshots.pipeline import ScreenshotPipeline
+from app.screenshots.quality import ScreenshotQualityValidator
+from app.screenshots.repository import ScreenshotRepository
+from app.screenshots.selection import FinalScreenshotSelector
 
 
 def create_app(settings: AppSettings | None = None) -> FastAPI:
@@ -237,6 +246,36 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             repository=semantic_repository,
         )
         phase6_evaluator = Phase6Evaluator(resolved_settings, semantic_repository)
+
+        screenshot_repository = ScreenshotRepository(workspace)
+        source_screenshot_extractor = SourceScreenshotExtractor(
+            resolved_settings, workspace, checkpoints, screenshot_repository, semantic_repository
+        )
+        screenshot_quality = ScreenshotQualityValidator(
+            resolved_settings, workspace, checkpoints, screenshot_repository, semantic_repository
+        )
+        visual_fingerprints = VisualFingerprintGenerator(
+            resolved_settings, workspace, checkpoints, screenshot_repository
+        )
+        duplicate_detector = CrossWindowDuplicateDetector(
+            resolved_settings, workspace, checkpoints, screenshot_repository, semantic_repository
+        )
+        final_screenshot_selector = FinalScreenshotSelector(
+            resolved_settings, workspace, checkpoints, screenshot_repository, semantic_repository
+        )
+        phase7_cache = Phase7CacheCoordinator(
+            workspace, checkpoints, screenshot_repository, semantic_repository,
+            source_screenshot_extractor, screenshot_quality, visual_fingerprints,
+            duplicate_detector, final_screenshot_selector,
+        )
+        phase7_evaluator = Phase7Evaluator(resolved_settings, screenshot_repository, semantic_repository)
+        screenshot_pipeline = ScreenshotPipeline(
+            jobs=service, checkpoints=checkpoints, events=event_logger,
+            semantic_repository=semantic_repository, repository=screenshot_repository,
+            extractor=source_screenshot_extractor, quality=screenshot_quality,
+            fingerprints=visual_fingerprints, duplicates=duplicate_detector,
+            selector=final_screenshot_selector, cache=phase7_cache, evaluator=phase7_evaluator,
+        )
         phase3_pipeline = NotifyPipeline(
             ingestion=ingestion,
             frame_analysis=frame_analysis,
@@ -267,6 +306,16 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             transcription=transcription_pipeline,
             semantic=semantic_pipeline,
         )
+        screenshot_full_pipeline = NotifyPipeline(
+            ingestion=ingestion,
+            frame_analysis=frame_analysis,
+            ingestion_cache=ingestion_cache,
+            jobs=service,
+            candidate_analysis=candidate_analysis,
+            transcription=transcription_pipeline,
+            semantic=semantic_pipeline,
+            screenshots=screenshot_pipeline,
+        )
 
         if resolved_settings.processor_mode == "fake":
             processor = FakeProcessor(service, checkpoints, resolved_settings)
@@ -278,8 +327,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             processor = full_pipeline
         elif resolved_settings.processor_mode == "transcription":
             processor = transcription_full_pipeline
-        else:
+        elif resolved_settings.processor_mode == "semantic":
             processor = semantic_full_pipeline
+        else:
+            processor = screenshot_full_pipeline
 
         runner = JobRunner(
             service,
@@ -326,10 +377,23 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         app.state.semantic_cache = semantic_cache
         app.state.semantic_pipeline = semantic_pipeline
         app.state.phase6_evaluator = phase6_evaluator
-        if resolved_settings.processor_mode == "semantic":
+        app.state.screenshot_repository = screenshot_repository
+        app.state.source_screenshot_extractor = source_screenshot_extractor
+        app.state.screenshot_quality_validator = screenshot_quality
+        app.state.visual_fingerprint_generator = visual_fingerprints
+        app.state.duplicate_detector = duplicate_detector
+        app.state.final_screenshot_selector = final_screenshot_selector
+        app.state.phase7_cache = phase7_cache
+        app.state.phase7_evaluator = phase7_evaluator
+        app.state.screenshot_pipeline = screenshot_pipeline
+        if resolved_settings.processor_mode == "screenshots":
+            app.state.notify_pipeline = screenshot_full_pipeline
+        elif resolved_settings.processor_mode == "semantic":
             app.state.notify_pipeline = semantic_full_pipeline
         elif resolved_settings.processor_mode == "transcription":
             app.state.notify_pipeline = transcription_full_pipeline
+        elif resolved_settings.processor_mode == "analysis":
+            app.state.notify_pipeline = phase3_pipeline
         else:
             app.state.notify_pipeline = full_pipeline
         app.state.cleanup_manager = cleanup
@@ -343,7 +407,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     app = FastAPI(
         title=resolved_settings.app_name,
-        version="0.6.0",
+        version="0.7.0",
         lifespan=lifespan,
     )
     app.include_router(health.router)

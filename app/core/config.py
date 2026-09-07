@@ -25,7 +25,7 @@ class AppSettings(BaseSettings):
     job_retention_hours: int = Field(default=72, ge=1)
     max_concurrent_jobs: int = Field(default=2, ge=1, le=32)
     log_level: str = "INFO"
-    processor_mode: Literal["semantic", "transcription", "candidates", "analysis", "ingestion", "fake"] = "analysis"
+    processor_mode: Literal["screenshots", "semantic", "transcription", "candidates", "analysis", "ingestion", "fake"] = "analysis"
 
     # Phase-1 compatibility/testing processor.
     fake_processor_step_delay: float = Field(default=0.15, ge=0.0, le=60.0)
@@ -253,6 +253,73 @@ class AppSettings(BaseSettings):
     semantic_decision_ambiguity_gap: float = Field(default=0.04, ge=0.0, le=1.0)
     semantic_transition_reject_threshold: float = Field(default=0.70, ge=0.0, le=1.0)
 
+    # Phase 7.1 - exact high-resolution source screenshot extraction.
+    final_screenshot_format: Literal["png"] = "png"
+    source_screenshot_end_tolerance_seconds: float = Field(default=0.05, ge=0.0, le=1.0)
+    source_screenshot_min_dimension: int = Field(default=32, ge=1, le=512)
+    source_screenshot_timeout_seconds: int = Field(default=120, ge=5, le=3600)
+    max_concurrent_screenshot_extractions: int = Field(default=1, ge=1, le=8)
+
+    # Phase 7.2 - visual quality validation and bounded local refinement.
+    screenshot_sharpness_saturation: float = Field(default=250.0, gt=0.0)
+    screenshot_blur_score_threshold: float = Field(default=0.18, ge=0.0, le=1.0)
+    screenshot_min_quality_score: float = Field(default=0.50, ge=0.0, le=1.0)
+    screenshot_good_quality_score: float = Field(default=0.68, ge=0.0, le=1.0)
+    screenshot_quality_search_radius_seconds: float = Field(default=0.40, ge=0.0, le=2.0)
+    screenshot_quality_search_step_seconds: float = Field(default=0.10, gt=0.0, le=1.0)
+    max_screenshot_quality_attempts: int = Field(default=9, ge=1, le=41)
+    screenshot_search_on_acceptable: bool = False
+    screenshot_timestamp_distance_weight: float = Field(default=0.05, ge=0.0, le=1.0)
+    screenshot_min_quality_improvement_to_shift: float = Field(default=0.03, ge=0.0, le=1.0)
+    screenshot_quality_sharpness_weight: float = Field(default=0.30, ge=0.0, le=1.0)
+    screenshot_quality_contrast_weight: float = Field(default=0.20, ge=0.0, le=1.0)
+    screenshot_quality_exposure_weight: float = Field(default=0.20, ge=0.0, le=1.0)
+    screenshot_quality_content_weight: float = Field(default=0.20, ge=0.0, le=1.0)
+    screenshot_quality_blankness_weight: float = Field(default=0.10, ge=0.0, le=1.0)
+
+    # Phase 7.3 - lightweight visual fingerprints.
+    visual_phash_size: int = Field(default=8, ge=4, le=32)
+    visual_dhash_size: int = Field(default=8, ge=4, le=32)
+    visual_comparison_long_edge: int = Field(default=320, ge=64, le=1024)
+    visual_edge_low_threshold: int = Field(default=80, ge=0, le=255)
+    visual_edge_high_threshold: int = Field(default=180, ge=0, le=255)
+    max_concurrent_fingerprint_jobs: int = Field(default=2, ge=1, le=8)
+
+    # Phase 7.4 - cross-window duplicate detection.
+    duplicate_primary_temporal_window_seconds: float = Field(default=120.0, ge=0.0, le=7200.0)
+    duplicate_full_pairwise_cutoff: int = Field(default=150, ge=2, le=5000)
+    duplicate_hash_bucket_slices: int = Field(default=4, ge=1, le=16)
+    duplicate_structural_weight: float = Field(default=0.35, ge=0.0, le=1.0)
+    duplicate_edge_weight: float = Field(default=0.25, ge=0.0, le=1.0)
+    duplicate_phash_weight: float = Field(default=0.20, ge=0.0, le=1.0)
+    duplicate_dhash_weight: float = Field(default=0.10, ge=0.0, le=1.0)
+    duplicate_content_weight: float = Field(default=0.05, ge=0.0, le=1.0)
+    duplicate_temporal_weight: float = Field(default=0.05, ge=0.0, le=1.0)
+    duplicate_score_threshold: float = Field(default=0.88, ge=0.0, le=1.0)
+    possible_duplicate_score_threshold: float = Field(default=0.78, ge=0.0, le=1.0)
+    duplicate_min_structural_similarity: float = Field(default=0.86, ge=0.0, le=1.0)
+    duplicate_min_edge_similarity: float = Field(default=0.72, ge=0.0, le=1.0)
+    duplicate_max_structural_addition_ratio: float = Field(default=0.22, ge=0.0, le=1.0)
+    duplicate_changed_pixel_threshold: float = Field(default=0.08, ge=0.0, le=1.0)
+    duplicate_long_range_phash_distance: float = Field(default=0.12, ge=0.0, le=1.0)
+
+    # Phase 7.5 - deterministic best screenshot per duplicate group.
+    final_selection_semantic_weight: float = Field(default=0.35, ge=0.0, le=1.0)
+    final_selection_quality_weight: float = Field(default=0.30, ge=0.0, le=1.0)
+    final_selection_completion_weight: float = Field(default=0.15, ge=0.0, le=1.0)
+    final_selection_confidence_weight: float = Field(default=0.08, ge=0.0, le=1.0)
+    final_selection_sharpness_weight: float = Field(default=0.07, ge=0.0, le=1.0)
+    final_selection_timestamp_weight: float = Field(default=0.05, ge=0.0, le=1.0)
+    final_selection_exact_timestamp_bonus: float = Field(default=0.01, ge=0.0, le=0.1)
+    final_selection_tie_epsilon: float = Field(default=1e-6, gt=0.0, le=0.1)
+    final_selection_max_semantic_deficit_for_quality_override: float = Field(default=0.15, ge=0.0, le=1.0)
+
+    # Phase 7.7 diagnostics only.
+    phase7_high_fallback_ratio: float = Field(default=0.35, ge=0.0, le=1.0)
+    phase7_high_duplicate_ratio: float = Field(default=0.70, ge=0.0, le=1.0)
+    phase7_high_quality_override_ratio: float = Field(default=0.40, ge=0.0, le=1.0)
+    phase7_poor_final_quality_ratio: float = Field(default=0.15, ge=0.0, le=1.0)
+
     # Phase 6.7 diagnostic thresholds only.
     phase6_high_rejection_ratio: float = Field(default=0.80, ge=0.0, le=1.0)
     phase6_low_rejection_ratio: float = Field(default=0.02, ge=0.0, le=1.0)
@@ -356,6 +423,35 @@ class AppSettings(BaseSettings):
         )
         if abs(sum(semantic_weights) - 1.0) > 1e-6:
             raise ValueError("Semantic decision weights must sum to 1.0")
+        screenshot_quality_weights = (
+            self.screenshot_quality_sharpness_weight,
+            self.screenshot_quality_contrast_weight,
+            self.screenshot_quality_exposure_weight,
+            self.screenshot_quality_content_weight,
+            self.screenshot_quality_blankness_weight,
+        )
+        if abs(sum(screenshot_quality_weights) - 1.0) > 1e-6:
+            raise ValueError("Screenshot quality weights must sum to 1.0")
+        if self.screenshot_good_quality_score < self.screenshot_min_quality_score:
+            raise ValueError("SCREENSHOT_GOOD_QUALITY_SCORE must be >= minimum quality score")
+        if self.visual_edge_low_threshold > self.visual_edge_high_threshold:
+            raise ValueError("VISUAL_EDGE_LOW_THRESHOLD must be <= VISUAL_EDGE_HIGH_THRESHOLD")
+        duplicate_weights = (
+            self.duplicate_structural_weight, self.duplicate_edge_weight,
+            self.duplicate_phash_weight, self.duplicate_dhash_weight,
+            self.duplicate_content_weight, self.duplicate_temporal_weight,
+        )
+        if abs(sum(duplicate_weights) - 1.0) > 1e-6:
+            raise ValueError("Duplicate detection weights must sum to 1.0")
+        if self.possible_duplicate_score_threshold >= self.duplicate_score_threshold:
+            raise ValueError("POSSIBLE_DUPLICATE_SCORE_THRESHOLD must be < DUPLICATE_SCORE_THRESHOLD")
+        final_selection_weights = (
+            self.final_selection_semantic_weight, self.final_selection_quality_weight,
+            self.final_selection_completion_weight, self.final_selection_confidence_weight,
+            self.final_selection_sharpness_weight, self.final_selection_timestamp_weight,
+        )
+        if abs(sum(final_selection_weights) - 1.0) > 1e-6:
+            raise ValueError("Final screenshot selection weights must sum to 1.0")
         if self.qwen_vl_quantization != "none" and self.qwen_vl_device == "cpu":
             raise ValueError("QWEN_VL_QUANTIZATION requires CUDA/auto device; CPU quantization is not supported here")
         if not self.whisper_model_size.strip():

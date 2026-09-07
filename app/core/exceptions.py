@@ -298,3 +298,56 @@ class SemanticDecisionError(SemanticAnalysisError):
 
 class Phase6ValidationError(SemanticAnalysisError):
     code = "phase6_validation_failed"
+
+
+class ScreenshotPipelineError(NotifyError):
+    code = "screenshot_pipeline_failed"
+    category = "SCREENSHOT_PIPELINE"
+
+
+class SourceScreenshotExtractionError(ScreenshotPipelineError):
+    code = "source_screenshot_extraction_failed"
+
+
+class SourceVideoMissingError(SourceScreenshotExtractionError):
+    code = "source_video_missing"
+
+
+class SourceVideoInvalidError(SourceScreenshotExtractionError):
+    code = "source_video_invalid"
+
+
+class ScreenshotTimestampOutOfRangeError(SourceScreenshotExtractionError):
+    code = "source_screenshot_timestamp_out_of_range"
+
+
+class ScreenshotFFmpegError(SourceScreenshotExtractionError):
+    code = "source_screenshot_ffmpeg_failed"
+
+
+class ScreenshotDecodeError(SourceScreenshotExtractionError):
+    code = "source_screenshot_decode_failed"
+
+
+class ScreenshotPathError(SourceScreenshotExtractionError):
+    code = "source_screenshot_path_unsafe"
+
+
+class ScreenshotQualityError(ScreenshotPipelineError):
+    code = "screenshot_quality_failed"
+
+
+class VisualFingerprintError(ScreenshotPipelineError):
+    code = "visual_fingerprint_failed"
+
+
+class DuplicateDetectionError(ScreenshotPipelineError):
+    code = "duplicate_detection_failed"
+
+
+class FinalScreenshotSelectionError(ScreenshotPipelineError):
+    code = "final_screenshot_selection_failed"
+
+
+class Phase7ValidationError(ScreenshotPipelineError):
+    code = "phase7_validation_failed"

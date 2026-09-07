@@ -1,3 +1,29 @@
+Metadata-Version: 2.4
+Name: notify-ml
+Version: 0.7.0
+Summary: Local-first AI lecture screenshot extraction pipeline
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi<1.0,>=0.115
+Requires-Dist: uvicorn[standard]<1.0,>=0.32
+Requires-Dist: pydantic<3.0,>=2.10
+Requires-Dist: pydantic-settings<3.0,>=2.7
+Requires-Dist: psutil<8.0,>=6.1
+Requires-Dist: yt-dlp>=2025.1.15
+Requires-Dist: numpy<3.0,>=2.0
+Requires-Dist: opencv-python-headless<5.0,>=4.10
+Requires-Dist: scikit-image<1.0,>=0.24
+Requires-Dist: faster-whisper<2.0,>=1.1
+Requires-Dist: Pillow<13,>=11
+Provides-Extra: vlm
+Requires-Dist: torch>=2.4; extra == "vlm"
+Requires-Dist: transformers>=4.57; extra == "vlm"
+Requires-Dist: accelerate>=1.0; extra == "vlm"
+Provides-Extra: dev
+Requires-Dist: httpx<1.0,>=0.28; extra == "dev"
+Requires-Dist: pytest<10.0,>=8.3; extra == "dev"
+Requires-Dist: pytest-asyncio<2.0,>=0.25; extra == "dev"
+
 # Notify ML
 
 Notify is a **local-first lecture processing application**. The long-term product accepts a YouTube lecture, identifies completed teaching states such as slides, boards, diagrams, and code, selects useful screenshots with a local vision-language model, removes duplicates, and generates a PDF.

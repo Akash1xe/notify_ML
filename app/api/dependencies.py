@@ -93,3 +93,19 @@ def get_vlm_runtime(request: Request):
 
 def get_phase6_evaluator(request: Request):
     return request.app.state.phase6_evaluator
+
+
+def get_screenshot_repository(request: Request):
+    return request.app.state.screenshot_repository
+
+
+def get_phase7_cache(request: Request):
+    return request.app.state.phase7_cache
+
+
+def get_screenshot_pipeline(request: Request):
+    return request.app.state.screenshot_pipeline
+
+
+def get_phase7_evaluator(request: Request):
+    return request.app.state.phase7_evaluator
