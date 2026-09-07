@@ -10,3 +10,7 @@ storage/jobs/*
 .DS_Store
 .idea/
 .vscode/
+*.egg-info/
+frontend/node_modules/
+frontend/dist/
+frontend/.env

@@ -1,0 +1,2 @@
+import { describe,expect,it } from 'vitest'; import { formatFileSize,formatTimestamp,friendlyContentType } from './formatting';
+describe('formatting',()=>{it('formats bytes',()=>expect(formatFileSize(8123456)).toBe('7.7 MB'));it('formats time',()=>{expect(formatTimestamp(641.2)).toBe('10:41');expect(formatTimestamp(3661)).toBe('01:01:01')});it('maps content',()=>expect(friendlyContentType('UI_DEMO')).toBe('UI Demo'))});

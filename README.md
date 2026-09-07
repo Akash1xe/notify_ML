@@ -2,7 +2,7 @@
 
 Notify is a **local-first lecture processing application**. The long-term product accepts a YouTube lecture, identifies completed teaching states such as slides, boards, diagrams, and code, selects useful screenshots with a local vision-language model, removes duplicates, and generates a PDF.
 
-**Phase 6 is complete.** Notify can ingest a lecture, build visual candidates, transcribe locally with faster-whisper, align speech to candidate timestamps, construct compact temporal visual context, analyze candidates through a local Qwen3-VL runtime, and deterministically select semantically useful completed visual states with candidate-level cache/recovery.
+**Phase 8 is complete.** Notify now runs from YouTube ingestion through local visual/transcript/semantic analysis, source-resolution screenshot selection, deterministic document layout, validated PDF generation, read-only result APIs, and a React processing/result interface.
 
 No paid API or cloud vision/speech service is required. Qwen model weights are downloaded only on explicit uncached semantic inference (unless local-files-only mode is enabled); automated tests use fake STT/VLM adapters and never download model weights.
 
@@ -1027,3 +1027,124 @@ python scripts/evaluate_phase7.py storage/jobs/<job-id>
 ```
 
 `PROCESSOR_MODE=screenshots` runs the full pipeline through Phase 7 while retaining all earlier processor modes. `FINAL_SCREENSHOTS_READY` means the screenshot set is source-derived, quality-validated, visually fingerprinted, cross-window deduplicated, winner-selected and chronologically ordered. It does **not** mean a PDF has been generated; Phase 8 owns layout, compression and document export.
+
+## Phase 8 — Document generation and user interface
+
+Phase 8 completes the end-to-end local product. `FINAL_SCREENSHOTS_READY` is now a strict handoff into a renderer-independent document pipeline; no PDF stage reaches back into Phase 4–7 internals.
+
+```text
+FINAL_SCREENSHOTS_READY
+        ↓
+8.1 DocumentInputBuilder
+        ↓  document/input_manifest.json
+DOCUMENT_INPUT_READY
+        ↓
+8.2 DocumentLayoutEngine
+        ↓  document/layout.json
+DOCUMENT_LAYOUT_READY
+        ↓
+8.3 DocumentRenderPlanner
+        ↓  document/render_plan.json
+DOCUMENT_RENDER_PLAN_READY
+        ↓
+8.4 DocumentPdfGenerator (ReportLab + pypdf validation)
+        ↓  document/pdf_manifest.json + document/final.pdf
+PDF_READY
+        ↓
+8.5 DocumentCacheCoordinator
+        ↓  exact dependency-chain validation / resume
+8.6 Result APIs
+        ↓
+8.7–8.8 React processing + result/download UI
+        ↓
+FINAL_DOCUMENT_READY
+```
+
+The current layout strategy is deliberately readability-first: one final screenshot per page, A4/Letter support, per-page portrait/landscape AUTO orientation, fixed caption/footer reserves, `CONTAIN` fitting, no cropping, no stretching, and no image upscaling unless explicitly enabled. The render plan is declarative and stores image/text instructions without invoking a PDF backend. ReportLab is isolated behind the PDF renderer, while pypdf validates signature, page count and page dimensions before atomic promotion of `final.tmp.pdf` to `final.pdf`.
+
+The Phase-8 dependency chain is:
+
+```text
+Phase-7 final-selection fingerprint
+    → document_input_fingerprint
+    → layout_fingerprint
+    → render_plan_fingerprint
+    → pdf_artifact_fingerprint
+```
+
+Invalidation is intentionally narrow:
+
+| Change | Resume from |
+| --- | --- |
+| Phase-7 winner/order/image SHA or source document metadata | 8.1 |
+| Page size/orientation/margins/reserved geometry | 8.2 |
+| Timestamp/content label/caption/page-number/font-content settings | 8.3 |
+| PDF compression/JPEG quality/font backend/PDF metadata encoding | 8.4 |
+| Download filename or frontend-only change | reuse all document artifacts |
+
+`DocumentCacheCoordinator` validates each artifact boundary, rejects mixed dependency chains, ignores/removes temporary files, repairs missing checkpoints only when artifacts validate, and preserves a previous valid PDF until a replacement has passed validation. Cache inspection never runs FFmpeg, Qwen, OCR, screenshot extraction or PDF rendering.
+
+### Phase-8 workspace
+
+```text
+document/
+├── input_manifest.json
+├── layout.json
+├── render_plan.json
+├── pdf_manifest.json
+├── summary.json
+└── final.pdf
+```
+
+### Result API
+
+```text
+GET /api/jobs/{job_id}/document
+GET /api/jobs/{job_id}/document/summary
+GET /api/jobs/{job_id}/document/screenshots
+GET /api/jobs/{job_id}/document/screenshots/{candidate_id}/preview
+GET /api/jobs/{job_id}/document/cache
+GET /api/jobs/{job_id}/document/download
+```
+
+The download endpoint is read-only and streams the existing validated PDF. It uses `application/pdf`, a sanitized title-derived `Content-Disposition` filename, a SHA-256 ETag, private revalidation caching and never regenerates work during a GET request. Screenshot preview IDs resolve only through the final document manifest; raw filesystem paths are never accepted from the browser.
+
+### Frontend
+
+Phase 8 adds the repository's first frontend under `frontend/` using React, TypeScript and Vite. The UI is intentionally focused: paste a YouTube URL, submit one job, watch backend-reported progress, cancel/retry safely, then inspect the final screenshots and download the PDF. The browser never invents progress, and both processing/result routes reconstruct state from `jobId`, so refresh/navigation does not lose the job or cancel backend processing.
+
+Run locally with two terminals after configuring `.env` (use `PROCESSOR_MODE=document` for the complete pipeline):
+
+```bash
+# backend
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+# frontend
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend environment:
+
+```bash
+cp frontend/.env.example frontend/.env
+# VITE_API_BASE_URL=http://localhost:8000
+```
+
+Every `VITE_*` value is public browser configuration; never put API secrets/model tokens there. Development CORS is restricted to `FRONTEND_ORIGIN` (default `http://localhost:5173`).
+
+Useful verification commands:
+
+```bash
+python -m pytest
+python -m compileall -q app scripts tests
+
+cd frontend
+npm run typecheck
+npm run lint
+npm run test
+npm run build
+```
+
+`PROCESSOR_MODE=document` and `PROCESSOR_MODE=full` run through Phase 8. Earlier modes (`screenshots`, `semantic`, `transcription`, `candidates`, `analysis`, `ingestion`, `fake`) remain available. In full document mode the job reaches 100% only after the complete PDF dependency chain validates and `FINAL_DOCUMENT_READY` is written. Phase 9 remains responsible for broad real-lecture evaluation, performance tuning and production hardening.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "notify-ml"
-version = "0.7.0"
+version = "0.8.0"
 description = "Local-first AI lecture screenshot extraction pipeline"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,6 +20,8 @@ dependencies = [
   "scikit-image>=0.24,<1.0",
   "faster-whisper>=1.1,<2.0",
   "Pillow>=11,<13",
+  "reportlab>=4.2,<5.0",
+  "pypdf>=5.0,<7.0",
 ]
 
 [project.optional-dependencies]

@@ -109,3 +109,19 @@ def get_screenshot_pipeline(request: Request):
 
 def get_phase7_evaluator(request: Request):
     return request.app.state.phase7_evaluator
+
+
+def get_document_repository(request: Request):
+    return request.app.state.document_repository
+
+
+def get_document_cache(request: Request):
+    return request.app.state.document_cache
+
+
+def get_document_result_service(request: Request):
+    return request.app.state.document_result_service
+
+
+def get_document_pipeline(request: Request):
+    return request.app.state.document_pipeline

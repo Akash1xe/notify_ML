@@ -1,0 +1,1 @@
+export function isYouTubeUrl(value:string):boolean { try { const url=new URL(value.trim()); const host=url.hostname.toLowerCase().replace(/^www\./,''); return host==='youtube.com'||host==='m.youtube.com'||host==='youtu.be'; } catch { return false; } }

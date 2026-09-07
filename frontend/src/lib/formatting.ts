@@ -1,0 +1,4 @@
+export function formatFileSize(bytes:number):string { if(bytes<1024)return `${bytes} B`; if(bytes<1024**2)return `${(bytes/1024).toFixed(1)} KB`; if(bytes<1024**3)return `${(bytes/1024**2).toFixed(1)} MB`; return `${(bytes/1024**3).toFixed(1)} GB`; }
+export function formatTimestamp(seconds:number):string { const whole=Math.max(0,Math.floor(seconds)); const h=Math.floor(whole/3600); const m=Math.floor((whole%3600)/60); const s=whole%60; return h?`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`:`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; }
+const labels:Record<string,string>={SLIDE:'Slide',WHITEBOARD:'Whiteboard',BLACKBOARD:'Blackboard',CODE:'Code',DIAGRAM:'Diagram',EQUATION:'Equation',DOCUMENT:'Document',UI_DEMO:'UI Demo',MIXED:'Mixed',OTHER:'Other',UNKNOWN:'Unknown',EMPTY_OR_LOW_INFORMATION:'Low information'};
+export const friendlyContentType=(value:string)=>labels[value]||'Unknown';

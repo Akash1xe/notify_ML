@@ -22,6 +22,7 @@ WORKSPACE_DIRS = (
     "semantic",
     "decisions",
     "output",
+    "document",
     "logs",
 )
 
@@ -319,6 +320,30 @@ class WorkspaceManager:
 
     def screenshot_evaluation_path(self, job_id: str) -> Path:
         return self.screenshots_dir(job_id) / "evaluation.json"
+
+    def document_dir(self, job_id: str) -> Path:
+        return self.workspace(job_id) / "document"
+
+    def document_input_manifest_path(self, job_id: str) -> Path:
+        return self.document_dir(job_id) / "input_manifest.json"
+
+    def document_layout_path(self, job_id: str) -> Path:
+        return self.document_dir(job_id) / "layout.json"
+
+    def document_render_plan_path(self, job_id: str) -> Path:
+        return self.document_dir(job_id) / "render_plan.json"
+
+    def document_pdf_manifest_path(self, job_id: str) -> Path:
+        return self.document_dir(job_id) / "pdf_manifest.json"
+
+    def document_summary_path(self, job_id: str) -> Path:
+        return self.document_dir(job_id) / "summary.json"
+
+    def document_pdf_path(self, job_id: str) -> Path:
+        return self.document_dir(job_id) / "final.pdf"
+
+    def document_temp_pdf_path(self, job_id: str) -> Path:
+        return self.document_dir(job_id) / "final.tmp.pdf"
 
     def decisions_dir(self, job_id: str) -> Path:
         return self.workspace(job_id) / "decisions"

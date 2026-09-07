@@ -3,9 +3,10 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import health, jobs, system
+from app.api.routes import document, health, jobs, system
 from app.candidate_analysis.boundaries import StableBoundaryDetector
 from app.candidate_analysis.cache import CandidateAnalysisCacheManager
 from app.candidate_analysis.evaluation import Phase4Evaluator
@@ -69,6 +70,14 @@ from app.screenshots.pipeline import ScreenshotPipeline
 from app.screenshots.quality import ScreenshotQualityValidator
 from app.screenshots.repository import ScreenshotRepository
 from app.screenshots.selection import FinalScreenshotSelector
+from app.document.cache import DocumentCacheCoordinator
+from app.document.input import DocumentInputBuilder
+from app.document.layout import DocumentLayoutEngine
+from app.document.pdf import DocumentPdfGenerator, ReportLabPdfRenderer
+from app.document.pipeline import DocumentPipeline
+from app.document.render import DocumentRenderPlanner
+from app.document.repository import DocumentRepository
+from app.document.results import DocumentResultService
 
 
 def create_app(settings: AppSettings | None = None) -> FastAPI:
@@ -276,6 +285,29 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             fingerprints=visual_fingerprints, duplicates=duplicate_detector,
             selector=final_screenshot_selector, cache=phase7_cache, evaluator=phase7_evaluator,
         )
+
+        document_repository = DocumentRepository(workspace)
+        document_input_builder = DocumentInputBuilder(
+            resolved_settings, workspace, checkpoints, screenshot_repository, document_repository
+        )
+        document_layout_engine = DocumentLayoutEngine(resolved_settings, checkpoints, document_repository)
+        document_render_planner = DocumentRenderPlanner(resolved_settings, checkpoints, document_repository)
+        pdf_renderer = ReportLabPdfRenderer(resolved_settings)
+        document_pdf_generator = DocumentPdfGenerator(
+            resolved_settings, workspace, checkpoints, document_repository, pdf_renderer
+        )
+        document_cache = DocumentCacheCoordinator(
+            workspace, checkpoints, screenshot_repository, document_repository,
+            document_input_builder, document_layout_engine, document_render_planner, document_pdf_generator,
+        )
+        document_pipeline = DocumentPipeline(
+            jobs=service, checkpoints=checkpoints, events=event_logger, screenshots=screenshot_repository,
+            repository=document_repository, cache=document_cache, input_builder=document_input_builder,
+            layout=document_layout_engine, render=document_render_planner, pdf=document_pdf_generator,
+        )
+        document_result_service = DocumentResultService(
+            resolved_settings, service, workspace, checkpoints, document_repository, screenshot_repository, document_cache
+        )
         phase3_pipeline = NotifyPipeline(
             ingestion=ingestion,
             frame_analysis=frame_analysis,
@@ -316,6 +348,11 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             semantic=semantic_pipeline,
             screenshots=screenshot_pipeline,
         )
+        document_full_pipeline = NotifyPipeline(
+            ingestion=ingestion, frame_analysis=frame_analysis, ingestion_cache=ingestion_cache, jobs=service,
+            candidate_analysis=candidate_analysis, transcription=transcription_pipeline, semantic=semantic_pipeline,
+            screenshots=screenshot_pipeline, document=document_pipeline,
+        )
 
         if resolved_settings.processor_mode == "fake":
             processor = FakeProcessor(service, checkpoints, resolved_settings)
@@ -329,6 +366,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             processor = transcription_full_pipeline
         elif resolved_settings.processor_mode == "semantic":
             processor = semantic_full_pipeline
+        elif resolved_settings.processor_mode == "screenshots":
+            processor = screenshot_full_pipeline
+        elif resolved_settings.processor_mode in {"document", "full"}:
+            processor = document_full_pipeline
         else:
             processor = screenshot_full_pipeline
 
@@ -386,7 +427,17 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         app.state.phase7_cache = phase7_cache
         app.state.phase7_evaluator = phase7_evaluator
         app.state.screenshot_pipeline = screenshot_pipeline
-        if resolved_settings.processor_mode == "screenshots":
+        app.state.document_repository = document_repository
+        app.state.document_input_builder = document_input_builder
+        app.state.document_layout_engine = document_layout_engine
+        app.state.document_render_planner = document_render_planner
+        app.state.document_pdf_generator = document_pdf_generator
+        app.state.document_cache = document_cache
+        app.state.document_pipeline = document_pipeline
+        app.state.document_result_service = document_result_service
+        if resolved_settings.processor_mode in {"document", "full"}:
+            app.state.notify_pipeline = document_full_pipeline
+        elif resolved_settings.processor_mode == "screenshots":
             app.state.notify_pipeline = screenshot_full_pipeline
         elif resolved_settings.processor_mode == "semantic":
             app.state.notify_pipeline = semantic_full_pipeline
@@ -394,8 +445,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             app.state.notify_pipeline = transcription_full_pipeline
         elif resolved_settings.processor_mode == "analysis":
             app.state.notify_pipeline = phase3_pipeline
-        else:
+        elif resolved_settings.processor_mode == "candidates":
             app.state.notify_pipeline = full_pipeline
+        else:
+            app.state.notify_pipeline = screenshot_full_pipeline
         app.state.cleanup_manager = cleanup
 
         await runner.start()
@@ -407,11 +460,19 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     app = FastAPI(
         title=resolved_settings.app_name,
-        version="0.7.0",
+        version="0.8.0",
         lifespan=lifespan,
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[resolved_settings.frontend_origin],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["*"],
     )
     app.include_router(health.router)
     app.include_router(jobs.router)
+    app.include_router(document.router)
     app.include_router(system.router)
 
     @app.exception_handler(JobNotFoundError)

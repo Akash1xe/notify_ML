@@ -25,7 +25,7 @@ class AppSettings(BaseSettings):
     job_retention_hours: int = Field(default=72, ge=1)
     max_concurrent_jobs: int = Field(default=2, ge=1, le=32)
     log_level: str = "INFO"
-    processor_mode: Literal["screenshots", "semantic", "transcription", "candidates", "analysis", "ingestion", "fake"] = "analysis"
+    processor_mode: Literal["document", "full", "screenshots", "semantic", "transcription", "candidates", "analysis", "ingestion", "fake"] = "analysis"
 
     # Phase-1 compatibility/testing processor.
     fake_processor_step_delay: float = Field(default=0.15, ge=0.0, le=60.0)
@@ -314,6 +314,51 @@ class AppSettings(BaseSettings):
     final_selection_tie_epsilon: float = Field(default=1e-6, gt=0.0, le=0.1)
     final_selection_max_semantic_deficit_for_quality_override: float = Field(default=0.15, ge=0.0, le=1.0)
 
+    # Phase 8 - document generation.
+    document_square_aspect_tolerance: float = Field(default=0.05, ge=0.0, le=0.25)
+    document_include_timestamp_display: bool = True
+    document_include_source_metadata: bool = True
+
+    pdf_page_size: Literal["A4", "LETTER"] = "A4"
+    pdf_page_orientation: Literal["AUTO", "PORTRAIT", "LANDSCAPE"] = "AUTO"
+    pdf_square_page_orientation: Literal["PORTRAIT", "LANDSCAPE"] = "PORTRAIT"
+    pdf_margin_top_mm: float = Field(default=12.0, ge=0.0, le=100.0)
+    pdf_margin_bottom_mm: float = Field(default=12.0, ge=0.0, le=100.0)
+    pdf_margin_left_mm: float = Field(default=12.0, ge=0.0, le=100.0)
+    pdf_margin_right_mm: float = Field(default=12.0, ge=0.0, le=100.0)
+    pdf_header_enabled: bool = False
+    pdf_header_height_mm: float = Field(default=8.0, ge=0.0, le=50.0)
+    pdf_footer_enabled: bool = True
+    pdf_footer_height_mm: float = Field(default=8.0, ge=0.0, le=50.0)
+    pdf_caption_enabled: bool = True
+    pdf_caption_height_mm: float = Field(default=10.0, ge=0.0, le=80.0)
+    pdf_allow_image_upscale: bool = False
+    pdf_layout_epsilon_points: float = Field(default=0.01, gt=0.0, le=5.0)
+    pdf_min_screenshot_width_mm: float = Field(default=80.0, gt=0.0, le=300.0)
+    pdf_min_screenshot_height_mm: float = Field(default=45.0, gt=0.0, le=300.0)
+
+    pdf_show_timestamp: bool = True
+    pdf_show_content_type: bool = False
+    pdf_caption_max_characters: int = Field(default=300, ge=1, le=5000)
+    pdf_caption_max_words: int = Field(default=50, ge=1, le=1000)
+    pdf_caption_max_lines: int = Field(default=2, ge=1, le=10)
+    pdf_page_number_style: Literal["SIMPLE", "PAGE_OF_TOTAL"] = "SIMPLE"
+    pdf_header_max_characters: int = Field(default=100, ge=1, le=1000)
+    pdf_header_font_size_pt: float = Field(default=10.0, gt=0.0, le=72.0)
+    pdf_caption_font_size_pt: float = Field(default=9.0, gt=0.0, le=72.0)
+    pdf_footer_font_size_pt: float = Field(default=8.0, gt=0.0, le=72.0)
+
+    pdf_image_compression_mode: Literal["LOSSLESS", "JPEG", "AUTO"] = "AUTO"
+    pdf_jpeg_quality: int = Field(default=92, ge=1, le=100)
+    pdf_render_bounds_epsilon_points: float = Field(default=0.5, ge=0.0, le=10.0)
+    pdf_page_dimension_epsilon_points: float = Field(default=0.5, ge=0.0, le=10.0)
+    pdf_large_file_warning_mb: float = Field(default=100.0, gt=0.0, le=10000.0)
+    pdf_unicode_font_path: Path | None = None
+
+    document_download_filename_max_length: int = Field(default=120, ge=20, le=240)
+    document_preview_enabled: bool = True
+    frontend_origin: str = "http://localhost:5173"
+
     # Phase 7.7 diagnostics only.
     phase7_high_fallback_ratio: float = Field(default=0.35, ge=0.0, le=1.0)
     phase7_high_duplicate_ratio: float = Field(default=0.70, ge=0.0, le=1.0)
@@ -340,7 +385,7 @@ class AppSettings(BaseSettings):
             raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}")
         return normalized
 
-    @field_validator("ffmpeg_path", "ffprobe_path", "whisper_model_cache_dir", "qwen_vl_model_cache_dir", mode="before")
+    @field_validator("ffmpeg_path", "ffprobe_path", "whisper_model_cache_dir", "qwen_vl_model_cache_dir", "pdf_unicode_font_path", mode="before")
     @classmethod
     def empty_tool_path_is_none(cls, value):
         if value is None or (isinstance(value, str) and not value.strip()):
@@ -461,6 +506,23 @@ class AppSettings(BaseSettings):
         if self.min_alternate_ranking_score < self.min_primary_ranking_score:
             # Alternates may be held to a stricter threshold, never a looser one.
             raise ValueError("MIN_ALTERNATE_RANKING_SCORE must be >= MIN_PRIMARY_RANKING_SCORE")
+        # Phase 8 page geometry must leave a usable image region for both orientations.
+        if self.pdf_page_size == "A4":
+            page_w_mm, page_h_mm = 210.0, 297.0
+        else:
+            page_w_mm, page_h_mm = 215.9, 279.4
+        for width_mm, height_mm in ((page_w_mm, page_h_mm), (page_h_mm, page_w_mm)):
+            usable_w = width_mm - self.pdf_margin_left_mm - self.pdf_margin_right_mm
+            reserved_h = self.pdf_margin_top_mm + self.pdf_margin_bottom_mm
+            if self.pdf_header_enabled:
+                reserved_h += self.pdf_header_height_mm
+            if self.pdf_footer_enabled:
+                reserved_h += self.pdf_footer_height_mm
+            if self.pdf_caption_enabled:
+                reserved_h += self.pdf_caption_height_mm
+            usable_h = height_mm - reserved_h
+            if usable_w <= 0 or usable_h <= 0:
+                raise ValueError("Phase-8 PDF geometry leaves no usable page content area")
         return self
 
 

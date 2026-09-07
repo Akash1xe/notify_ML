@@ -1,0 +1,2 @@
+import { BrowserRouter, Route, Routes } from 'react-router-dom'; import { HomePage } from './pages/HomePage'; import { ProcessingPage } from './pages/ProcessingPage'; import { ResultPage } from './pages/ResultPage';
+export default function App(){return <BrowserRouter><Routes><Route path="/" element={<HomePage/>}/><Route path="/jobs/:jobId/processing" element={<ProcessingPage/>}/><Route path="/jobs/:jobId/result" element={<ResultPage/>}/><Route path="*" element={<HomePage/>}/></Routes></BrowserRouter>}

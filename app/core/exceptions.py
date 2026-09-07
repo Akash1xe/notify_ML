@@ -351,3 +351,56 @@ class FinalScreenshotSelectionError(ScreenshotPipelineError):
 
 class Phase7ValidationError(ScreenshotPipelineError):
     code = "phase7_validation_failed"
+
+
+class DocumentPipelineError(NotifyError):
+    code = "document_pipeline_failed"
+    category = "DOCUMENT"
+
+
+class DocumentInputError(DocumentPipelineError):
+    code = "document_input_failed"
+
+
+class DocumentInputDependencyError(DocumentInputError):
+    code = "document_input_dependency_not_ready"
+
+
+class DocumentInputIntegrityError(DocumentInputError):
+    code = "document_input_integrity_failed"
+
+
+class DocumentLayoutError(DocumentPipelineError):
+    code = "document_layout_failed"
+
+
+class DocumentRenderPlanError(DocumentPipelineError):
+    code = "document_render_plan_failed"
+
+
+class PdfGenerationError(DocumentPipelineError):
+    code = "pdf_render_failed"
+
+
+class PdfValidationError(PdfGenerationError):
+    code = "pdf_validation_failed"
+
+
+class PdfEmptyDocumentError(PdfGenerationError):
+    code = "pdf_empty_document"
+
+
+class PdfUnsupportedGlyphError(PdfGenerationError):
+    code = "pdf_unsupported_glyph"
+
+
+class DocumentNotReadyError(DocumentPipelineError):
+    code = "document_not_ready"
+
+
+class DocumentStaleError(DocumentPipelineError):
+    code = "document_stale"
+
+
+class DocumentCorruptError(DocumentPipelineError):
+    code = "document_corrupt"

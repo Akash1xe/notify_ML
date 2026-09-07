@@ -363,6 +363,7 @@ class NotifyPipeline:
         transcription=None,
         semantic=None,
         screenshots=None,
+        document=None,
     ) -> None:
         self._ingestion = ingestion
         self._frame_analysis = frame_analysis
@@ -372,6 +373,7 @@ class NotifyPipeline:
         self._transcription = transcription
         self._semantic = semantic
         self._screenshots = screenshots
+        self._document = document
 
     async def process(self, job_id: str) -> None:
         ingestion = await self._ingestion.process(job_id, finalize_job=False)
@@ -381,25 +383,30 @@ class NotifyPipeline:
         await self._frame_analysis.process(
             job_id,
             ingestion=ingestion,
-            finalize_job=self._candidate_analysis is None and self._transcription is None and self._semantic is None and self._screenshots is None,
+            finalize_job=self._candidate_analysis is None and self._transcription is None and self._semantic is None and self._screenshots is None and self._document is None,
         )
         if self._candidate_analysis is not None:
             current = self._jobs.get_job(job_id)
             if current.status is JobStatus.CANCELLED:
                 raise JobCancelledError(f"Job {job_id} was cancelled")
-            await self._candidate_analysis.process(job_id, finalize_job=self._transcription is None and self._semantic is None and self._screenshots is None)
+            await self._candidate_analysis.process(job_id, finalize_job=self._transcription is None and self._semantic is None and self._screenshots is None and self._document is None)
         if self._transcription is not None:
             current = self._jobs.get_job(job_id)
             if current.status is JobStatus.CANCELLED:
                 raise JobCancelledError(f"Job {job_id} was cancelled")
-            await self._transcription.process(job_id, finalize_job=self._semantic is None and self._screenshots is None)
+            await self._transcription.process(job_id, finalize_job=self._semantic is None and self._screenshots is None and self._document is None)
         if self._semantic is not None:
             current = self._jobs.get_job(job_id)
             if current.status is JobStatus.CANCELLED:
                 raise JobCancelledError(f"Job {job_id} was cancelled")
-            await self._semantic.process(job_id, finalize_job=self._screenshots is None)
+            await self._semantic.process(job_id, finalize_job=self._screenshots is None and self._document is None)
         if self._screenshots is not None:
             current = self._jobs.get_job(job_id)
             if current.status is JobStatus.CANCELLED:
                 raise JobCancelledError(f"Job {job_id} was cancelled")
-            await self._screenshots.process(job_id, finalize_job=True)
+            await self._screenshots.process(job_id, finalize_job=self._document is None)
+        if self._document is not None:
+            current = self._jobs.get_job(job_id)
+            if current.status is JobStatus.CANCELLED:
+                raise JobCancelledError(f"Job {job_id} was cancelled")
+            await self._document.process(job_id, finalize_job=True)
