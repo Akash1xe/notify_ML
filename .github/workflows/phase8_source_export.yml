@@ -1,0 +1,25 @@
+name: Phase8 source export
+
+on:
+  push:
+    branches: [phase8-work]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: phase8-work
+      - name: Pack source
+        run: |
+          tar --exclude=.git --exclude=.github/workflows/phase8_source_export.yml -czf /tmp/notify-source.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notify-phase8-source
+          path: /tmp/notify-source.tar.gz
+          if-no-files-found: error
