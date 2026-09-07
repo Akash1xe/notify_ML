@@ -39,6 +39,16 @@ jobs:
           git -C source apply --check /tmp/phase8.patch
           git -C source apply /tmp/phase8.patch
           sed -i 's/catch(e){if(stopped)return;/catch{if(stopped)return;/' source/frontend/src/hooks/useJobPolling.ts
+          printf '/// <reference types="vite/client" />\n' > source/frontend/src/vite-env.d.ts
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('source/frontend/package.json')
+          data = json.loads(path.read_text())
+          data['scripts']['typecheck'] = 'tsc -p tsconfig.app.json --noEmit'
+          data['scripts']['build'] = 'npm run typecheck && vite build'
+          path.write_text(json.dumps(data, indent=2) + '\n')
+          PY
 
       - name: Set up Python
         uses: actions/setup-python@v5
