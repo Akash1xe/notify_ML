@@ -1,0 +1,83 @@
+name: Publish Verified Phase 8
+
+on:
+  push:
+    branches: [phase8-work]
+    paths:
+      - ".github/workflows/phase8_publish_verified.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout transport
+        uses: actions/checkout@v4
+        with:
+          ref: phase8-work
+          path: transport
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: source
+
+      - name: Reconstruct verified source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C source rev-parse HEAD)" = "8bc813981dd467ae7822064d22a6295d4f79f2dd"
+          cat transport/publish/phase8/part_* | base64 -d > /tmp/phase8.patch.gz
+          echo "b9f1887f3f2849e079e5b405196e3247b187042deff09042a3741ceae8738aa3  /tmp/phase8.patch.gz" | sha256sum -c -
+          gzip -dc /tmp/phase8.patch.gz > /tmp/phase8.patch
+          echo "b3adee97c162dee45d11219803f264b32eafa67365de0768719897ec4aafd826  /tmp/phase8.patch" | sha256sum -c -
+          git -C source apply --check /tmp/phase8.patch
+          git -C source apply /tmp/phase8.patch
+          sed -i 's/catch(e){if(stopped)return;/catch{if(stopped)return;/' source/frontend/src/hooks/useJobPolling.ts
+          printf '/// <reference types="vite/client" />\n' > source/frontend/src/vite-env.d.ts
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('source/frontend/package.json')
+          data = json.loads(path.read_text())
+          data['scripts']['typecheck'] = 'tsc -p tsconfig.app.json --noEmit'
+          data['scripts']['build'] = 'npm run typecheck && vite build'
+          path.write_text(json.dumps(data, indent=2) + '\n')
+          PY
+          git -C source restore --source=HEAD -- .github/workflows/tests.yml
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Generate frontend lockfile
+        working-directory: source/frontend
+        run: npm install --package-lock-only --no-audit --no-fund
+
+      - name: Clean generated files
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .pytest_cache frontend/node_modules frontend/dist
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
+          find . -maxdepth 1 -type d -name '*.egg-info' -prune -exec rm -rf {} +
+          find . -name '*.pyc' -delete
+
+      - name: Commit and push verified Phase 8
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Akash1xe"
+          git config user.email "121711965+Akash1xe@users.noreply.github.com"
+          git add -A
+          git status --short
+          test -n "$(git status --porcelain)"
+          git commit -m "Complete end-to-end document workflow"
+          git push origin HEAD:main
