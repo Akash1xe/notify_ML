@@ -1,0 +1,52 @@
+name: Release validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/release/**"
+      - "app/observability/**"
+      - "scripts/validate_release.py"
+      - "scripts/run_stress_tests.py"
+      - "scripts/run_reliability_tests.py"
+      - ".github/workflows/release-validation.yml"
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  official-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend dependencies
+        run: pip install -e ".[dev]"
+      - name: Run official release validation
+        run: |
+          python scripts/validate_release.py \
+            --official \
+            --json \
+            --output /tmp/notify-release \
+            | tee /tmp/notify-release-output.json
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notify-v1-release-validation
+          path: |
+            /tmp/notify-release/
+            /tmp/notify-release-output.json
+          if-no-files-found: error
