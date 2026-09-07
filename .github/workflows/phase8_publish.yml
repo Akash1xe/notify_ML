@@ -1,0 +1,110 @@
+name: Publish Phase 8
+
+on:
+  push:
+    branches: [phase8-work]
+    paths:
+      - "publish/phase8/**"
+      - ".github/workflows/phase8_publish.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout transport
+        uses: actions/checkout@v4
+        with:
+          ref: phase8-work
+          path: transport
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: source
+
+      - name: Verify base and reconstruct Phase 8
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C source rev-parse HEAD)" = "8bc813981dd467ae7822064d22a6295d4f79f2dd"
+          cat transport/publish/phase8/part_* | base64 -d > /tmp/phase8.patch.gz
+          echo "b9f1887f3f2849e079e5b405196e3247b187042deff09042a3741ceae8738aa3  /tmp/phase8.patch.gz" | sha256sum -c -
+          gzip -dc /tmp/phase8.patch.gz > /tmp/phase8.patch
+          echo "b3adee97c162dee45d11219803f264b32eafa67365de0768719897ec4aafd826  /tmp/phase8.patch" | sha256sum -c -
+          git -C source apply --check /tmp/phase8.patch
+          git -C source apply /tmp/phase8.patch
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        working-directory: source
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run backend tests
+        working-directory: source
+        run: pytest
+
+      - name: Compile Python sources
+        working-directory: source
+        run: python -m compileall -q app scripts tests
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install frontend dependencies
+        working-directory: source/frontend
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck frontend
+        working-directory: source/frontend
+        run: npm run typecheck
+
+      - name: Lint frontend
+        working-directory: source/frontend
+        run: npm run lint
+
+      - name: Test frontend
+        working-directory: source/frontend
+        run: npm run test
+
+      - name: Build frontend
+        working-directory: source/frontend
+        run: npm run build
+
+      - name: Clean generated files
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .pytest_cache frontend/node_modules frontend/dist
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
+          find . -maxdepth 1 -type d -name '*.egg-info' -prune -exec rm -rf {} +
+          find . -name '*.pyc' -delete
+          test ! -e .github/workflows/phase8_source_export.yml
+          test ! -e .github/workflows/phase8_publish.yml
+          test ! -e publish/phase8
+
+      - name: Commit and push Phase 8
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Akash1xe"
+          git config user.email "121711965+Akash1xe@users.noreply.github.com"
+          git add -A
+          git status --short
+          test -n "$(git status --porcelain)"
+          git commit -m "Complete end-to-end document workflow"
+          git push origin HEAD:main
