@@ -1,0 +1,79 @@
+name: Phase7 publish
+
+on:
+  push:
+    branches: [phase7-work]
+    paths:
+      - '.github/workflows/phase7_publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout transport branch
+        uses: actions/checkout@v4
+        with:
+          ref: phase7-work
+          path: transport
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: repo
+          fetch-depth: 0
+
+      - name: Reconstruct and verify Phase 7 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat \
+            transport/publish/phase7/part00.b64 \
+            transport/publish/phase7/part01.b64 \
+            transport/publish/phase7/part02.b64 \
+            transport/publish/phase7/part03.b64 \
+            transport/publish/phase7/part04.b64 \
+            transport/publish/phase7/part05a.b64 \
+            transport/publish/phase7/part05b.b64 \
+            transport/publish/phase7/part05c.b64 \
+            transport/publish/phase7/part06a.b64 \
+            transport/publish/phase7/part06b.b64 \
+            transport/publish/phase7/part06c.b64 \
+            | base64 --decode > /tmp/phase7_patch.tar.gz
+          echo '1fbf8e4af9e294232e8788ceb9c1dbf48834ced5eb91a55e24dc33f12535d3eb  /tmp/phase7_patch.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/phase7_patch.tar.gz -C repo
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: repo/pyproject.toml
+
+      - name: Install project
+        working-directory: repo
+        run: python -m pip install -e '.[dev]'
+
+      - name: Verify Phase 7 tree
+        working-directory: repo
+        run: |
+          python -m pytest -q
+          python -m compileall -q app tests scripts
+          python scripts/evaluate_phase7.py --help >/dev/null
+          python -c "from app.screenshots.pipeline import ScreenshotPipeline; print('ScreenshotPipeline import OK')"
+
+      - name: Commit Phase 7 to main
+        working-directory: repo
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Akash1xe'
+          git config user.email '121711965+Akash1xe@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Complete final screenshot pipeline'
+          git push origin HEAD:main
