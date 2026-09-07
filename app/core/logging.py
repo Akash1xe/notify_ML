@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import UTC, datetime
 from threading import RLock
 from typing import TYPE_CHECKING
@@ -19,13 +20,30 @@ class ContextFormatter(logging.Formatter):
         return super().format(record)
 
 
+class JsonContextFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "job_id": getattr(record, "job_id", None),
+            "stage": getattr(record, "stage", None),
+            "message": record.getMessage(),
+        }
+        return json.dumps({k: v for k, v in payload.items() if v is not None}, ensure_ascii=False, sort_keys=True)
+
+
 def configure_logging(level: str) -> None:
     handler = logging.StreamHandler()
-    handler.setFormatter(
-        ContextFormatter(
-            "%(asctime)s %(levelname)s job=%(job_id)s stage=%(stage)s %(name)s: %(message)s"
+    log_format = os.getenv("LOG_FORMAT", "text").strip().lower()
+    if log_format == "json":
+        handler.setFormatter(JsonContextFormatter())
+    else:
+        handler.setFormatter(
+            ContextFormatter(
+                "%(asctime)s %(levelname)s job=%(job_id)s stage=%(stage)s %(name)s: %(message)s"
+            )
         )
-    )
     root = logging.getLogger()
     root.handlers.clear()
     root.addHandler(handler)
