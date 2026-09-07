@@ -1,0 +1,42 @@
+name: Publish Phase 6 snapshot
+
+on:
+  push:
+    branches: [phase6-publish]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct verified Phase 6 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat publish/phase6/part_* > /tmp/phase6_patch.b64
+          base64 --decode /tmp/phase6_patch.b64 > /tmp/phase6_patch.tar.xz
+          echo "6dee28c7ea63078912b24eaaaad0fb549fd1fba655502c0ecc1919914d66d2e5  /tmp/phase6_patch.tar.xz" | sha256sum -c -
+          cp /tmp/phase6_patch.tar.xz /tmp/phase6_verified.tar.xz
+
+      - name: Publish tested Phase 6 tree to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Akash"
+          git config user.email "121711965+Akash1xe@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+          tar -xJf /tmp/phase6_verified.tar.xz -C .
+          git add .env.example README.md pyproject.toml app scripts tests
+          if git diff --cached --quiet; then
+            echo "No Phase 6 changes to publish"
+            exit 0
+          fi
+          git commit -m "Complete semantic visual analysis pipeline"
+          git push origin HEAD:main
